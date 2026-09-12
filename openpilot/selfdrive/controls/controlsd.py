@@ -24,6 +24,7 @@ from openpilot.sunnypilot.modeld_v2.modeld_base import get_lat_smooth_seconds
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
+from openpilot.sunnypilot.selfdrive.controls.lib.rivian_offtrack_ext import RivianOfftrackCompensation
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -75,6 +76,9 @@ class Controls(ControlsExt):
     # angle controller alongside so angle mode gets upstream saturation warnings
     self.LaC_angle = LatControlAngle(self.CP, self.CP_SP, self.CI, DT_CTRL) if self.CP.brand == 'rivian' else None
     self.angle_steering = False
+
+    # Rear-axle off-tracking compensation, R1T-specific (see wheelbase-offtracking-plan.md)
+    self.rivian_offtrack = RivianOfftrackCompensation(self.params) if self.CP.brand == 'rivian' else None
 
   def update(self):
     self.sm.update(15)
@@ -149,6 +153,8 @@ class Controls(ControlsExt):
       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+    if self.rivian_offtrack is not None and CC.latActive:
+      new_desired_curvature = self.rivian_offtrack.apply(new_desired_curvature, self.CP.wheelbase)
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["lateralDelay"].lateralDelay + get_lat_smooth_seconds(CS.vEgo, LAT_SMOOTH_SECONDS)
 
