@@ -27,6 +27,28 @@ sections:
     enablement:
     - $ref: '#/macros/offroad'
     - $ref: '#/macros/longitudinal'
+- id: rivian
+  title: Rivian Settings
+  description: ''
+  items:
+  - key: RivianOfftrackCompensationEnabled
+    widget: toggle
+    title: Rear-Axle Off-Tracking Compensation (R1T)
+    description: Widens the commanded turn radius on tight turns to account for the R1T's long wheelbase, reducing rear-wheel curb strikes at sharp intersections. This is a geometric estimate, not curb sensing -- start conservative and validate before trusting it.
+    enablement:
+    - $ref: '#/macros/offroad'
+    sub_items:
+    - key: RivianOfftrackCompensationGain
+      widget: option
+      title: Compensation Gain
+      description: 0 = off, 1 = full geometric compensation. Start low and increase gradually while validating.
+      min: 0.0
+      max: 1.0
+      step: 0.05
+      enablement:
+      - type: param
+        key: RivianOfftrackCompensationEnabled
+        equals: true
 - id: subaru
   title: Subaru Settings
   description: ''
