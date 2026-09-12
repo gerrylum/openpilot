@@ -58,7 +58,14 @@ class CAR(Platforms):
                     car_parts=CarParts.common([CarHarness.rivian_a])),
       RivianCarDocs("Rivian R1T 2025", car_parts=CarParts.common([CarHarness.rivian_b])),
     ],
-    CarSpecs(mass=3206., wheelbase=3.08, steerRatio=15.2),
+    # NOTE: R1S wheelbase is 121.1in / 3.08m; R1T wheelbase is 135.8-136in / ~3.45m
+    # (Rivian support docs: rivian.com/support/article/what-is-the-vehicle-wheelbase-of-the-r1t
+    # and .../what-is-the-vehicle-wheelbase-of-r1s). Both body styles share this CarSpecs; using
+    # the R1T's (longer) number here since that's the vehicle this fork is validated against, and
+    # it's the safe direction to be wrong in for the R1S (VM assumes gentler turns than needed,
+    # not tighter). TODO: split into separate R1T/R1S platform configs using VIN ModelLine so both
+    # get their correct wheelbase instead of sharing one.
+    CarSpecs(mass=3206., wheelbase=3.45, steerRatio=15.2),
     wmis={WMI.RIVIAN_TRUCK, WMI.RIVIAN_MPV},
     lines={ModelLine.R1T, ModelLine.R1S},
     years={ModelYear.N_2022, ModelYear.P_2023, ModelYear.R_2024, ModelYear.S_2025},
