@@ -301,5 +301,5 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"RivianR1SWheelbase", {PERSISTENT | BACKUP, BOOL, "0"}},
     // Rivian rear-axle off-tracking compensation (see wheelbase-offtracking-plan.md)
     {"RivianOfftrackCompensationEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"RivianOfftrackCompensationGain", {PERSISTENT | BACKUP, FLOAT, "0.35"}},
+    {"RivianOfftrackCompensationGain", {PERSISTENT | BACKUP, FLOAT, "0.5"}},
 };
