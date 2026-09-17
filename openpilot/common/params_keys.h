@@ -295,6 +295,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TorqueParamsOverrideEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"TorqueParamsOverrideFriction", {PERSISTENT | BACKUP, FLOAT, "0.1"}},
     {"TorqueParamsOverrideLatAccelFactor", {PERSISTENT | BACKUP, FLOAT, "2.5"}},
+    // Rivian R1S/R1T wheelbase selector (see wheelbase-offtracking-plan.md) -- R1S and R1T
+    // share one CarSpecs entry upstream with no reliable fingerprint signal to tell them
+    // apart yet, so this is a manual override. False (default) = R1T.
+    {"RivianR1SWheelbase", {PERSISTENT | BACKUP, BOOL, "0"}},
     // Rivian rear-axle off-tracking compensation (see wheelbase-offtracking-plan.md)
     {"RivianOfftrackCompensationEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"RivianOfftrackCompensationGain", {PERSISTENT | BACKUP, FLOAT, "0.35"}},
