@@ -1,12 +1,19 @@
 import numpy as np
 from opendbc.can import CANPacker
 from opendbc.car import Bus
+from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.rivian.ext_controller import ExternalController, get_safety_CP  # noqa: F401
 from opendbc.car.rivian.riviancan import create_angle_steering, create_lka_steering, create_longitudinal, create_wheel_touch, create_adas_status, create_acm_status
 from opendbc.car.rivian.values import CarControllerParams, RivianFlags
 
 from opendbc.sunnypilot.car.rivian.mads import MadsCarController
+
+
+# The stock ACM answers an ACC stalk press within ~30 ms when it takes it. If it hasn't after this long, it declined.
+ACM_ENGAGE_TIMEOUT_FRAMES = 50  # 0.5 s
+# The stock ACM refuses ACC below this speed unless it has a lead
+ACM_MIN_ENGAGE_SPEED = 20 * CV.MPH_TO_MS
 
 
 class CarController(CarControllerBase, MadsCarController):
@@ -23,6 +30,12 @@ class CarController(CarControllerBase, MadsCarController):
     # set here when a driver ACC engage press was hidden from the ACM; card reads and clears it
     self.engage_request_blocked = False
     self.engage_request_prev = False
+    # set here when the ACM declined a driver ACC engage press that openpilot passed on; card reads and clears it.
+    # 'notReady': the ACM was not ready (ACM_FaultSupervisorState != 0), 'lowSpeed': below its minimum speed, no lead
+    self.engage_request_refused = None
+    self.engage_press_frames = 0
+    self.engage_press_not_ready = False
+    self.engage_press_low_speed = False
     self.erc = ExternalController()
 
   def update(self, CC, CC_SP, CS, now_nanos):
@@ -80,7 +93,28 @@ class CarController(CarControllerBase, MadsCarController):
         engage_request = any(msg["VDM_UserAdasRequest"] not in (0, 1) for msg in CS.vdm_adas_status)
         if block_engage and engage_request and not self.engage_request_prev:
           self.engage_request_blocked = True
+
+        # an ACC-on press (stalk down) that openpilot passes to the ACM: watch whether the ACM takes it
+        acc_on_request = any(msg["VDM_UserAdasRequest"] in (3, 4) for msg in CS.vdm_adas_status)
+        if acc_on_request and not self.engage_request_prev and not block_engage and not CS.out.cruiseState.enabled:
+          self.engage_press_frames = 1
+          self.engage_press_not_ready = False
+          self.engage_press_low_speed = CS.out.vEgo < ACM_MIN_ENGAGE_SPEED
         self.engage_request_prev = engage_request
+
+      # the ACM declined the press: tell the driver the likely reason, the truck only says ACC is not available
+      if self.engage_press_frames > 0:
+        if CS.out.cruiseState.enabled:
+          self.engage_press_frames = 0
+        else:
+          self.engage_press_not_ready |= CS.acm_fault_supervisor_state != 0
+          self.engage_press_frames += 1
+          if self.engage_press_frames > ACM_ENGAGE_TIMEOUT_FRAMES:
+            self.engage_press_frames = 0
+            if self.engage_press_not_ready:
+              self.engage_request_refused = 'notReady'
+            elif self.engage_press_low_speed:
+              self.engage_request_refused = 'lowSpeed'
 
       # keep the stock ACM from winding up its unactuated request
       for msg in CS.vdm_adas_status:
