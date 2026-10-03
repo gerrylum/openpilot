@@ -23,6 +23,7 @@ class CarState(CarStateBase, CarStateExt):
     self.eac_error_code = 0
     self.long_cmd_rejected_counter = 0
     self.long_cmd_rejected_updated = False
+    self.acm_fault_supervisor_state = 0
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     cp = can_parsers[Bus.pt]
@@ -115,6 +116,9 @@ class CarState(CarStateBase, CarStateExt):
     self.long_cmd_rejected_updated = len(rejected) > 0
     if self.long_cmd_rejected_updated:
       self.long_cmd_rejected_counter = int(rejected[-1])
+
+    # not 0 while the ACM is not ready to take ACC (e.g. the first ~60 s after the truck wakes), see carcontroller
+    self.acm_fault_supervisor_state = int(cp_cam.vl["ACM_Status"]["ACM_FaultSupervisorState"])
 
     self.eac_error_code = int(cp.vl["EPAS_AdasStatus"]["EPAS_EacErrorCode"])
     self.eac_status = int(cp.vl["EPAS_AdasStatus"]["EPAS_EacStatus"])
