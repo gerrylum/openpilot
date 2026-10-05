@@ -2253,6 +2253,17 @@
               ]
             }
           ]
+        },
+        {
+          "key": "RivianForceTorqueSteering",
+          "widget": "toggle",
+          "title": "Torque-Only Steering (Testing)",
+          "description": "Steers on the torque channel for the whole drive instead of the angle channel. For collecting torque calibration data on a truck with the angle upgrade. Steering is weaker than in angle mode, especially in tight turns, so keep your hands on the wheel. Off-road only; takes effect on your next drive.",
+          "enablement": [
+            {
+              "type": "offroad_only"
+            }
+          ]
         }
       ]
     },

@@ -89,6 +89,13 @@ class Controls(ControlsExt):
     # angle controller alongside so angle mode gets upstream saturation warnings
     self.LaC_angle = LatControlAngle(self.CP, self.CP_SP, self.CI, DT_CTRL) if self.CP.brand == 'rivian' else None
     self.angle_steering = False
+    # torque-only steering (see RivianForceTorqueSteering): the angle channel is never used
+    self.rivian_force_torque = False
+    if self.CP.brand == 'rivian':
+      try:
+        self.rivian_force_torque = self.params.get_bool("RivianForceTorqueSteering")
+      except Exception:
+        cloudlog.exception("RivianForceTorqueSteering unreadable, using default steering mode")
 
     # Rear-axle off-tracking compensation, R1T-specific (see wheelbase-offtracking-plan.md)
     self.rivian_offtrack = RivianOfftrackCompensation(self.params) if self.CP.brand == 'rivian' else None
@@ -174,7 +181,9 @@ class Controls(ControlsExt):
     actuators.curvature = self.desired_curvature
     if self.LaC_angle is not None:
       # steering on the angle channel, the torque output is idle
-      self.angle_steering = CC.latActive and self.sm['carOutput'].actuatorsOutput.torqueOutputCan == 0
+      # in torque-only mode a zero torque output is just a zero crossing, not angle mode
+      self.angle_steering = (not self.rivian_force_torque and CC.latActive and
+                             self.sm['carOutput'].actuatorsOutput.torqueOutputCan == 0)
     steer, lateral_output, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                      self.steer_limited_by_safety or self.angle_steering, self.desired_curvature,
                                                      self.calibrated_pose, curvature_limited, lat_delay)

@@ -302,4 +302,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // Rivian rear-axle off-tracking compensation (see wheelbase-offtracking-plan.md)
     {"RivianOfftrackCompensationEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"RivianOfftrackCompensationGain", {PERSISTENT | BACKUP, FLOAT, "0.5"}},
+    // Rivian: steer on the torque channel only, never hand back to angle. For collecting
+    // torque calibration data on an angle-upgrade truck. Read once at the start of a drive.
+    {"RivianForceTorqueSteering", {PERSISTENT | BACKUP, BOOL, "0"}},
 };
