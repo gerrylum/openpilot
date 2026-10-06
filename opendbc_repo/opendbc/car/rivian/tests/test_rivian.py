@@ -1,9 +1,14 @@
+import copy
 import unittest
 from types import SimpleNamespace
 
+from opendbc.car import Bus, structs
 from opendbc.car.rivian.ext_controller import ExternalController, MIN_TORQUE_FRAMES, HANDS_OFF_EXIT_FRAMES
 from opendbc.car.rivian.fingerprints import FW_VERSIONS
+from opendbc.car.rivian.interface import CarInterface
 from opendbc.car.rivian.values import CAR, FW_QUERY_CONFIG, WMI, ModelLine, ModelYear
+
+GearShifter = structs.CarState.GearShifter
 
 
 class TestRivian(unittest.TestCase):
@@ -61,3 +66,44 @@ class TestExternalControllerForceTorque(unittest.TestCase):
     for torque_active, angle_active, apply_torque in self._run(erc, 5, lat_active=False):
       assert not torque_active and not angle_active and apply_torque == 0
     assert not erc.toi_act_cmd
+
+
+class TestBlockedEngagePress(unittest.TestCase):
+  """The ACC stalk is also the gear selector: only a stalk-down in Drive may be reported as a blocked ACC press."""
+
+  @staticmethod
+  def _run(seq, engageable=False):
+    # seq: (gear, VDM_UserAdasRequest) per frame. Returns the frames that raised engage_request_blocked.
+    CP = CarInterface.get_non_essential_params(CAR.RIVIAN_R1)
+    CP.openpilotLongitudinalControl = True
+    CI = CarInterface(CP, structs.CarParamsSP())
+    CC, CS = CI.CC, CI.CS
+    CC.openpilot_engageable = engageable
+    CS.acm_lka_hba_cmd = copy.copy(CI.can_parsers[Bus.cam].vl["ACM_lkaHbaCmd"])
+    CS.sccm_wheel_touch = copy.copy(CI.can_parsers[Bus.pt].vl["SCCM_WheelTouch"])
+    adas_status = copy.copy(CI.can_parsers[Bus.pt].vl["VDM_AdasSts"])
+    car_control = structs.CarControl().as_reader()
+
+    raised = []
+    for frame, (gear, request) in enumerate(seq):
+      CS.out = structs.CarState(gearShifter=gear, vEgo=0.3, vEgoRaw=0.3)
+      CS.vdm_adas_status = [dict(adas_status, VDM_UserAdasRequest=request)]
+      CC.update(car_control, structs.CarControlSP(), CS, 0)
+      if CC.engage_request_blocked:
+        raised.append(frame)
+        CC.engage_request_blocked = False
+    return raised
+
+  def test_gear_changes_are_not_engage_presses(self):
+    D, R, P = GearShifter.drive, GearShifter.reverse, GearShifter.park
+    self.assertEqual(self._run([(D, 0), (D, 2), (R, 2), (R, 0)]), [])  # D -> R, stalk up
+    self.assertEqual(self._run([(R, 0), (R, 4), (D, 4), (D, 0)]), [])  # R -> D, stalk down
+    self.assertEqual(self._run([(P, 0), (P, 3), (D, 3), (D, 4), (D, 0)]), [])  # P -> D
+    self.assertEqual(self._run([(D, 0), (D, 1), (D, 0)]), [])  # cancel
+
+  def test_acc_press_in_drive_is_reported(self):
+    D = GearShifter.drive
+    self.assertEqual(self._run([(D, 0), (D, 3), (D, 4), (D, 0)]), [1])
+    self.assertEqual(self._run([(D, 0), (D, 4), (D, 0), (D, 4), (D, 0)]), [1, 3])
+    # openpilot can engage: the press goes to the ACM, nothing to report
+    self.assertEqual(self._run([(D, 0), (D, 4), (D, 0)], engageable=True), [])
