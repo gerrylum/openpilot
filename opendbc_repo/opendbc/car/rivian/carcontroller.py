@@ -1,6 +1,6 @@
 import numpy as np
 from opendbc.can import CANPacker
-from opendbc.car import Bus
+from opendbc.car import Bus, structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.rivian.ext_controller import ExternalController, get_safety_CP  # noqa: F401
@@ -9,6 +9,8 @@ from opendbc.car.rivian.values import CarControllerParams, RivianFlags
 
 from opendbc.sunnypilot.car.rivian.mads import MadsCarController
 
+
+GearShifter = structs.CarState.GearShifter
 
 # The stock ACM answers an ACC stalk press within ~30 ms when it takes it. If it hasn't after this long, it declined.
 ACM_ENGAGE_TIMEOUT_FRAMES = 50  # 0.5 s
@@ -91,11 +93,15 @@ class CarController(CarControllerBase, MadsCarController):
       # flag the rising edge of a blocked engage press so openpilot can tell the driver why nothing happened
       if CS.vdm_adas_status:
         engage_request = any(msg["VDM_UserAdasRequest"] not in (0, 1) for msg in CS.vdm_adas_status)
-        if block_engage and engage_request and not self.engage_request_prev:
+        # VDM_UserAdasRequest: 0=IDLE, 1=UP_1, 2=UP_2, 3=DOWN_1, 4=DOWN_2. The ACC stalk is also the gear selector,
+        # so only a stalk-down while already in Drive is an ACC press. Stalk-up, or stalk-down out of R/N/P, is a
+        # gear change and must not be reported as an engage attempt.
+        acc_on_request = any(msg["VDM_UserAdasRequest"] in (3, 4) for msg in CS.vdm_adas_status)
+        in_drive = CS.out.gearShifter == GearShifter.drive
+        if block_engage and acc_on_request and in_drive and not self.engage_request_prev:
           self.engage_request_blocked = True
 
         # an ACC-on press (stalk down) that openpilot passes to the ACM: watch whether the ACM takes it
-        acc_on_request = any(msg["VDM_UserAdasRequest"] in (3, 4) for msg in CS.vdm_adas_status)
         if acc_on_request and not self.engage_request_prev and not block_engage and not CS.out.cruiseState.enabled:
           self.engage_press_frames = 1
           self.engage_press_not_ready = False
