@@ -103,12 +103,19 @@ class CarInterfaceBase(ABC, CarInterfaceBaseSP):
 
   DRIVABLE_GEARS: tuple[structs.CarState.GearShifter, ...] = ()
 
+  # Re-send a frame the panda's safety blocked, byte for byte, on the next apply(). It never reached the bus, so the
+  # car sees its counter sequence unbroken. Each frame is retried once, and only if it came from the latest apply(),
+  # so a retry never goes out after a newer frame of the same message.
+  RESEND_BLOCKED = False
+
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP):
     self.CP = CP
     self.CP_SP = CP_SP
 
     self.frame = 0
     self.v_ego_cluster_seen = False
+    self.last_sends: set[CanData] = set()
+    self.blocked: list[CanData] = []
 
     self.CS: CarStateBase = self.CarState(CP, CP_SP)
     self.can_parsers: dict[StrEnum, CANParser] = self.CS.get_can_parsers(CP, CP_SP)
@@ -119,7 +126,12 @@ class CarInterfaceBase(ABC, CarInterfaceBaseSP):
   def apply(self, c: structs.CarControl, c_sp: structs.CarControlSP, now_nanos: int | None = None) -> tuple[structs.CarControl.Actuators, list[CanData]]:
     if now_nanos is None:
       now_nanos = int(time.monotonic() * 1e9)
-    return self.CC.update(c, c_sp, self.CS, now_nanos)
+    actuators, can_sends = self.CC.update(c, c_sp, self.CS, now_nanos)
+    if self.RESEND_BLOCKED:
+      self.last_sends = {CanData(*m) for m in can_sends}
+      can_sends = self.blocked + can_sends
+      self.blocked = []
+    return actuators, can_sends
 
   @staticmethod
   def get_pid_accel_limits(CP, CP_SP, current_speed, cruise_speed):
@@ -259,6 +271,11 @@ class CarInterfaceBase(ABC, CarInterfaceBaseSP):
     tune.torque.steeringAngleDeadzoneDeg = steering_angle_deadzone_deg
 
   def update(self, can_packets: list[tuple[int, list[CanData]]]) -> tuple[structs.CarState, structs.CarStateSP]:
+    if self.RESEND_BLOCKED:
+      # the panda echoes a frame its safety blocked on bus + 192
+      self.blocked = [m for _, frames in can_packets for addr, dat, src in frames if src >= 192
+                      if (m := CanData(addr, bytes(dat), src - 192)) in self.last_sends]
+
     # parse can
     for cp in self.can_parsers.values():
       if cp is not None:
