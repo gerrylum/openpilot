@@ -16,6 +16,10 @@
 // not pandad. While sendcan is quiet, pandad repeats the last frame of each control message with the
 // counter advanced and the checksum recomputed, for at most MAX_FILL_FRAMES frames per gap.
 //
+// Each message is repeated at the rate card sends it: pandad learns the interval from the real frames, so
+// ACM_SteeringControl (sent at 50 Hz) is filled every 20 ms, the rest every 10 ms. The panda's real-time check allows
+// ~16 0x110 per 250 ms at 50 Hz, so filling it at 100 Hz would get the fills blocked.
+//
 // The repeated frames carry the same command as the last real frame and still go through the panda's
 // safety TX checks. After a fill, card's counters are behind what the bus has seen, so every later frame
 // has its counter shifted by the number of filled frames (mod 15) to keep the sequence continuous.
@@ -34,6 +38,12 @@ public:
   static constexpr int MAX_FILL_FRAMES = 15;          // ~150 ms, then let the car fault as before
   static constexpr uint64_t STALE_NS = 50000000ULL;   // only repeat messages that were part of the live stream
   static constexpr uint8_t COUNTER_MOD = 15;          // counters run 0-14
+  // per-message rate: a message whose real frames average more than SLOW_INTERVAL_NS apart is filled every
+  // SLOW_PERIOD_NS (50 Hz) instead of every PERIOD_NS. Intervals over LEARN_MAX_NS are gaps and don't count.
+  static constexpr uint64_t SLOW_INTERVAL_NS = 15000000ULL;
+  static constexpr uint64_t SLOW_PERIOD_NS = 20000000ULL;
+  static constexpr uint64_t LEARN_MAX_NS = 30000000ULL;
+  static constexpr uint64_t DUE_SLACK_NS = 5000000ULL;  // a 20 ms message is due on the 10 ms tick 20 ms after its last frame
 
   static uint8_t checksum(const uint8_t *dat, size_t len, uint8_t xor_out) {
     uint8_t crc = 0;
@@ -60,8 +70,13 @@ public:
     Slot *s = find(addr, bus);
     if (s == nullptr || len != s->len) return false;
 
+    if (s->last_ns != 0 && now_ns > s->last_ns && now_ns - s->last_ns < LEARN_MAX_NS) {
+      const uint64_t dt = now_ns - s->last_ns;
+      s->interval_ns = (s->interval_ns == 0) ? dt : (s->interval_ns * 7 + dt) / 8;
+    }
     memcpy(s->last, dat, len);
     s->last_ns = now_ns;
+    s->sent_ns = now_ns;
 
     if (s->offset == 0) return false;
     apply(*s, dat);
@@ -87,9 +102,18 @@ public:
     const uint64_t due_ns = (fills_in_gap == 0) ? (last_real_ns + GAP_NS) : (last_fill_ns + PERIOD_NS);
     if (now_ns < due_ns) return out;
 
+    // stay on a 10 ms grid when polled a little late, so the poll interval doesn't stretch the period
+    const uint64_t tick_ns = (now_ns - due_ns < PERIOD_NS) ? due_ns : now_ns;
+
+    bool any_live = false;
     for (auto &s : slots) {
       // skip messages card wasn't sending right before the gap
       if (s.last_ns == 0 || s.last_ns + STALE_NS < last_real_ns) continue;
+      any_live = true;
+
+      // a 50 Hz message only every other tick: due once its period since the last frame (real or filled) is up
+      if (tick_ns + DUE_SLACK_NS < s.sent_ns + period(s)) continue;
+      s.sent_ns = tick_ns;
 
       s.offset = (s.offset + 1) % COUNTER_MOD;
 
@@ -101,12 +125,17 @@ public:
       apply(s, f.dat);
     }
 
-    if (!out.empty()) {
+    if (any_live) {
       fills_in_gap++;
-      // stay on a 10 ms grid when polled a little late, so the poll interval doesn't stretch the period
-      last_fill_ns = (now_ns - due_ns < PERIOD_NS) ? due_ns : now_ns;
+      last_fill_ns = tick_ns;
     }
     return out;
+  }
+
+  // fill period currently used for a message, for tests and logging
+  uint64_t period_of(uint32_t addr, uint8_t bus) {
+    const Slot *s = find(addr, bus);
+    return (s == nullptr) ? 0 : period(*s);
   }
 
 private:
@@ -118,9 +147,15 @@ private:
     uint8_t offset = 0;    // fill frames sent so far, mod 15
     uint8_t last[8] = {};  // last real frame, as card sent it
     uint64_t last_ns = 0;
+    uint64_t sent_ns = 0;      // last frame on the bus for this message, real or filled
+    uint64_t interval_ns = 0;  // average interval between real frames
   };
 
-  // all are sent by card at 100 Hz: checksum in byte 0, counter (0-14) in the low nibble of byte 1
+  static uint64_t period(const Slot &s) {
+    return (s.interval_ns > SLOW_INTERVAL_NS) ? SLOW_PERIOD_NS : PERIOD_NS;
+  }
+
+  // sent by card at 100 Hz (0x110 at 50 Hz): checksum in byte 0, counter (0-14) in the low nibble of byte 1
   std::array<Slot, 5> slots = {{
     {0x100, 0, 8, 0x5F},  // ACM_Status
     {0x110, 0, 8, 0x41},  // ACM_SteeringControl

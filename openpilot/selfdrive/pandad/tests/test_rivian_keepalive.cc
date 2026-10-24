@@ -181,6 +181,68 @@ int main() {
     assert(fills == 8);  // 25, 35, ..., 95 ms
   }
 
+  {
+    // a message card sends every other frame (0x160 here; the rate is learned per message), the rest every frame. pandad learns 20 ms for 0x160 only,
+    // fills it every 20 ms in a stall and the others every 10 ms, and each counter stays continuous
+    KA ka;
+    uint8_t d[8];
+    uint64_t t = 1000;
+    int c160 = 0;
+    for (int frame = 0; frame < 40; frame++, t += 10) {
+      memcpy(d, REFS[0].c3, 8);
+      ka.on_frame(0x110, 0, d, 8, t * MS);
+      if (frame % 2 == 0) {
+        memcpy(d, (c160 % 2 == 0) ? REFS[2].c3 : REFS[2].c4, 5);
+        ka.on_frame(0x160, 0, d, 5, t * MS);
+        c160++;
+      }
+      ka.on_real_message(t * MS);
+    }
+    assert(ka.period_of(0x110, 0) == KA::PERIOD_NS);
+    assert(ka.period_of(0x160, 0) == KA::SLOW_PERIOD_NS);
+    // last real message at 1390 ms was an odd frame (0x110 only); the last 0x160 went out at 1380 ms with counter 4
+    const uint64_t last = t - 10;
+    int n110 = 0, n160 = 0;
+    uint64_t prev160 = 1380;
+    for (uint64_t p = last + 5; p < last + 100; p += 5) {
+      for (const auto &f : ka.fill(p * MS)) {
+        if (f.addr == 0x110) n110++;
+        if (f.addr == 0x160) {
+          n160++;
+          // first fill 25 ms after the last sendcan message, which may be one without 0x160: 35 ms after the
+          // last real 0x160, well inside the VDM's ~60-80 ms. Then every 20 ms.
+          assert(p - prev160 == ((n160 == 1) ? 35 : 20));
+          prev160 = p;
+          assert((f.dat[1] & 0x0F) == (4 + n160) % 15);
+          assert(f.dat[0] == KA::checksum(f.dat, 5, 0x12));
+        }
+      }
+    }
+    assert(n110 == 8);  // 25, 35, ..., 95 ms
+    assert(n160 == 4);  // 25, 45, 65, 85 ms after the last sendcan message
+    // card's next 0x160 (counter 3 here) continues after the last fill on the bus
+    memcpy(d, REFS[2].c3, 5);
+    assert(ka.on_frame(0x160, 0, d, 5, (last + 100) * MS));
+    assert((d[1] & 0x0F) == (3 + n160) % 15);
+    ka.on_real_message((last + 100) * MS);
+    // the stall itself doesn't change the learned rate
+    assert(ka.period_of(0x160, 0) == KA::SLOW_PERIOD_NS);
+  }
+
+  {
+    // the default 100 Hz stream with normal jitter (6-14 ms) stays at 10 ms
+    KA ka;
+    uint8_t d[8];
+    uint64_t t = 1000;
+    for (int frame = 0; frame < 200; frame++) {
+      t += (frame % 2) ? 14 : 6;
+      memcpy(d, REFS[2].c3, 5);
+      ka.on_frame(0x160, 0, d, 5, t * MS);
+      ka.on_real_message(t * MS);
+    }
+    assert(ka.period_of(0x160, 0) == KA::PERIOD_NS);
+  }
+
   printf("ok\n");
   return 0;
 }
