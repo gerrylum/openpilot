@@ -48,7 +48,7 @@ class TestRivianSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest,
   ANGLE_RATE_BP = None
   ANGLE_RATE_UP = None
   ANGLE_RATE_DOWN = None
-  LATERAL_FREQUENCY = 100
+  LATERAL_FREQUENCY = 50
 
   cnt_speed = 0
   cnt_speed_2 = 0
@@ -149,7 +149,8 @@ class TestRivianSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest,
         self._tx(self._angle_cmd_msg(0, True))
 
         # safety: max_delta_can = (max_delta_deg * DEG_TO_CAN) + 1
-        max_delta_can = int(get_max_angle_delta_vm(speed, self.VM, CarControllerParams) * self.DEG_TO_CAN) + 1
+        # get_max_angle_delta_vm is per 10 ms frame, the panda allows the same rate per 20 ms message
+        max_delta_can = int(get_max_angle_delta_vm(speed, self.VM, CarControllerParams) * 2 * self.DEG_TO_CAN) + 1
 
         # within limits
         self.assertTrue(self._tx(self._angle_cmd_msg(self._can_to_deg(max_delta_can) * sign, True)))

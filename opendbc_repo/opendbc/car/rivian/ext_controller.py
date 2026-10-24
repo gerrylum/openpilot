@@ -20,7 +20,8 @@ EPAS_FW_RATE_V  = [4.50, 1.50, 0.60,  0.18 ]  # deg/frame
 EPAS_FW_ANGLE_MARGIN = 0.98
 EPAS_FW_RATE_MARGIN  = 0.94
 
-# final per-frame cap inside panda's jerk limit
+# final per-frame cap inside panda's jerk limit (ACM_SteeringControl goes out every other frame, so a message moves at
+# most two frames' worth, inside the panda's per-message limit at 50 Hz)
 PANDA_STEP_MARGIN = 0.9
 
 MIN_TORQUE_FRAMES = 50

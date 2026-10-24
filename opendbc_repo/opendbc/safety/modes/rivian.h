@@ -104,7 +104,7 @@ static bool rivian_tx_hook(const CANPacket_t *msg) {
   const AngleSteeringLimits RIVIAN_ANGLE_STEERING_LIMITS = {
     .max_angle = 5000,  // 500 deg
     .angle_deg_to_can = 10,
-    .frequency = 100U,
+    .frequency = 50U,  // ACM_SteeringControl is sent at 50 Hz
   };
 
   const AngleSteeringParams RIVIAN_ANGLE_STEERING_PARAMS = {

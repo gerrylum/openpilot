@@ -27,6 +27,8 @@ class CarController(CarControllerBase, MadsCarController):
 
     self.cancel_frames = 0
     self.long_cmd_counter = 0
+    self.steer_counter = 0
+    self.steer_enabled_last = False  # ACM_EacEnabled in the last ACM_SteeringControl sent
     # set by card: False while selfdrived has a NO_ENTRY event (openpilot would refuse to engage)
     self.openpilot_engageable = True
     # set here when a driver ACC engage press was hidden from the ACM; card reads and clears it
@@ -56,7 +58,14 @@ class CarController(CarControllerBase, MadsCarController):
     self.apply_torque_last = apply_torque
     can_sends.append(create_lka_steering(self.packer, self.frame, CS.acm_lka_hba_cmd, apply_torque, CC.enabled, self.erc.toi_act_cmd, self.mads))
 
-    can_sends.append(create_angle_steering(self.packer, self.frame, self.erc.apply_angle_last, self.erc.angle_active))
+    # ACM_SteeringControl at 50 Hz (the panda's angle limits are per 20 ms message). The EPAS has no rate check, only
+    # freshness, checksum and repeated-counter checks on 0x110. It also faults if ACM_Status's FeatureStatus changes
+    # while the last 0x110 still has EacEnabled set, so when angle control turns on or off, send 0x110 on that frame
+    # too, ahead of ACM_Status. A frame the panda blocks is re-sent by CarInterfaceBase (RESEND_BLOCKED).
+    if self.frame % 2 == 0 or self.erc.angle_active != self.steer_enabled_last:
+      can_sends.append(create_angle_steering(self.packer, self.steer_counter, self.erc.apply_angle_last, self.erc.angle_active))
+      self.steer_counter += 1
+      self.steer_enabled_last = self.erc.angle_active
     feature_status = (1 if self.erc.torque_active else 2) if self.mads.lat_active else 0
     can_sends.append(create_acm_status(self.packer, self.frame, feature_status))
 
@@ -79,10 +88,7 @@ class CarController(CarControllerBase, MadsCarController):
       # CC.enabled lags the ACM clearing its feature status by the selfdrived/controlsd round trip
       long_enabled = CC.enabled and CS.out.cruiseState.enabled
       accel = float(np.clip(actuators.accel, CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX)) if long_enabled else 0.0
-      # a rejected frame never reached the bus, resend its counter if nothing newer went out
-      resend = CS.long_cmd_rejected_updated and CS.long_cmd_rejected_counter == self.long_cmd_counter % 15
-      if not resend:
-        self.long_cmd_counter += 1
+      self.long_cmd_counter += 1
       can_sends.append(create_longitudinal(self.packer, self.long_cmd_counter, accel, long_enabled))
 
       # If openpilot would refuse to engage (NO_ENTRY), hide the driver's ACC engage request from the ACM so it never
