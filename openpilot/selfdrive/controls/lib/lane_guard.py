@@ -32,8 +32,11 @@ LANE_CURVE_T = 2.5  # s, how far ahead the lane curvature is measured
 # Rivian: R1T and R1S body without mirrors is 2.014 m. Gentler than the Model Y tune, the target is low-passed so short
 # blips (mostly road edges) do not reach the wheel. Replayed on route c17ea97dc5472650/00000014 this cut noticeable
 # nudges from 74 to 21 and the p95 lateral jerk from 4 to 0.5 m/s^3, keeping about 3/4 of the correction.
+# The model holds the truck 10-35 cm right of the lane center on straights, with a 2 m body that rides the right line.
+# Above 35 mph lane lines are guarded on straights too and the body keeps 25 cm from them.
 BRAND_TUNING = {
-  "rivian": {"car_half_width": 2.014 / 2, "max_lat_accel": 0.4, "max_lat_jerk": 0.8, "target_tau": 0.5},
+  "rivian": {"car_half_width": 2.014 / 2, "max_lat_accel": 0.4, "max_lat_jerk": 0.8, "target_tau": 0.5,
+             "line_margin": 0.25, "straight_min_speed": 15.6},
 }
 
 
@@ -45,22 +48,24 @@ def get_lane_curvature(v_ego, lines):
 
 
 def get_lane_guard_curvature(v_ego, path_x, path_y, left, right, left_edge, right_edge, left_hand_traffic=False, car_half_width=CAR_HALF_WIDTH,
-                             max_lat_accel=MAX_LAT_ACCEL):
+                             max_lat_accel=MAX_LAT_ACCEL, line_margin=MARGIN, straight_min_speed=float('inf')):
   # left, right, left_edge, right_edge are (x, y) or None when not trusted.
   # On straights the model leaves the lane on purpose, to pass parked cars or make room in a bike lane for oncoming traffic,
   # so lane lines are only guarded in curves. Without the curb line (right, left in left-hand traffic), the other one is often
   # only the imagined middle of the road and is not guarded. Road edges are always guarded.
+  # Above straight_min_speed parked cars and bike lanes are rare, there lane lines are guarded on straights too, with line_margin.
   lines = [line for line in (left, right) if line is not None]
   curb = left if left_hand_traffic else right
-  curve = curb is not None and abs(get_lane_curvature(v_ego, lines)) > MIN_CURVE
+  curve = curb is not None and (v_ego > straight_min_speed or abs(get_lane_curvature(v_ego, lines)) > MIN_CURVE)
 
   curvature = 0.0
   for t in LOOKAHEAD_T:
     x = np.interp(t, ModelConstants.T_IDXS, path_x)
     car_y = np.interp(t, ModelConstants.T_IDXS, path_y) - CAMERA_OFFSET
     near = t <= MAX_EDGE_T
-    gaps_left = [(car_y - car_half_width) - np.interp(x, *left_edge)] if left_edge is not None and near else []
-    gaps_right = [np.interp(x, *right_edge) - (car_y + car_half_width)] if right_edge is not None and near else []
+    # (gap, margin) pairs
+    gaps_left = [((car_y - car_half_width) - np.interp(x, *left_edge), MARGIN)] if left_edge is not None and near else []
+    gaps_right = [(np.interp(x, *right_edge) - (car_y + car_half_width), MARGIN)] if right_edge is not None and near else []
     if curve:
       left_gap = (car_y - car_half_width) - np.interp(x, *left) if left is not None else None
       right_gap = np.interp(x, *right) - (car_y + car_half_width) if right is not None else None
@@ -68,20 +73,18 @@ def get_lane_guard_curvature(v_ego, path_x, path_y, left, right, left_edge, righ
       if lane_width is None or lane_width >= MIN_LANE_WIDTH:
         # without a center line the far line is often the other road edge, keep guarding the curb line
         if left_gap is not None and (left_hand_traffic or lane_width < MAX_LANE_WIDTH):
-          gaps_left.append(left_gap)
+          gaps_left.append((left_gap, line_margin))
         if right_gap is not None and (not left_hand_traffic or lane_width < MAX_LANE_WIDTH):
-          gaps_right.append(right_gap)
+          gaps_right.append((right_gap, line_margin))
 
-    # Getting closer than MARGIN pushes away, and the part over the line counts twice.
+    # Getting closer than the margin pushes away, and the part over the line counts twice.
     # pure pursuit: curvature that moves the path by push at distance x
     push_curvature = 2 / max(x, MIN_LOOKAHEAD_DIST) ** 2
     point_curvature = 0.0
     if gaps_left:
-      gap = min(gaps_left)
-      point_curvature += push_curvature * (max(MARGIN - gap, 0.0) + max(-gap, 0.0))
+      point_curvature += push_curvature * max(max(margin - gap, 0.0) + max(-gap, 0.0) for gap, margin in gaps_left)
     if gaps_right:
-      gap = min(gaps_right)
-      point_curvature -= push_curvature * (max(MARGIN - gap, 0.0) + max(-gap, 0.0))
+      point_curvature -= push_curvature * max(max(margin - gap, 0.0) + max(-gap, 0.0) for gap, margin in gaps_right)
 
     if abs(point_curvature) > abs(curvature):
       curvature = point_curvature
@@ -91,12 +94,15 @@ def get_lane_guard_curvature(v_ego, path_x, path_y, left, right, left_edge, righ
 
 
 class LaneGuard:
-  def __init__(self, dt=DT_CTRL, car_half_width=CAR_HALF_WIDTH, max_lat_accel=MAX_LAT_ACCEL, max_lat_jerk=MAX_LAT_JERK, target_tau=0.0):
+  def __init__(self, dt=DT_CTRL, car_half_width=CAR_HALF_WIDTH, max_lat_accel=MAX_LAT_ACCEL, max_lat_jerk=MAX_LAT_JERK, target_tau=0.0,
+               line_margin=MARGIN, straight_min_speed=float('inf')):
     self.dt = dt
     self.car_half_width = car_half_width
     self.max_lat_accel = max_lat_accel
     self.max_lat_jerk = max_lat_jerk
     self.target_tau = target_tau  # s, low-pass on the target, 0 is off
+    self.line_margin = line_margin
+    self.straight_min_speed = straight_min_speed
     self.target = 0.0
     self.curvature = 0.0
     self.lane_change_timer = 0.0
@@ -124,7 +130,7 @@ class LaneGuard:
       left, right = ((lane_lines[idx].x, lane_lines[idx].y) if self.line_valid[i] else None for i, idx in enumerate((1, 2)))
       left_edge, right_edge = ((edge.x, edge.y) if std < MAX_EDGE_STD else None for edge, std in zip(road_edges, model_v2.roadEdgeStds, strict=True))
       target = get_lane_guard_curvature(v_ego, model_v2.position.x, model_v2.position.y, left, right, left_edge, right_edge, left_hand_traffic,
-                                        self.car_half_width, self.max_lat_accel)
+                                        self.car_half_width, self.max_lat_accel, self.line_margin, self.straight_min_speed)
 
     if self.target_tau > 0.0:
       self.target += (target - self.target) * min(self.dt / self.target_tau, 1.0)

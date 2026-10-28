@@ -187,3 +187,22 @@ class TestLaneGuard(OpenpilotTestCase):
     stock_peak = max(abs(stock.update(V_EGO, md, True)) for md in seq)
     rivian_peak = max(abs(rivian.update(V_EGO, md, True)) for md in seq)
     assert rivian_peak < 0.5 * stock_peak
+
+  def test_rivian_guards_straights_at_speed(self):
+    # straight road, body 10 cm from the right line: stock leaves it, the Rivian tune pushes left above 35 mph only
+    car_y = 1.4 - BRAND_TUNING["rivian"]["car_half_width"] - 0.10
+    md = make_model(car_y, lane_width=2.8, curve=0.0)
+    assert settle(LaneGuard(), md) == 0.0
+    assert settle(LaneGuard(**BRAND_TUNING["rivian"]), md) < 0.0
+    slow = LaneGuard(**BRAND_TUNING["rivian"])
+    for _ in range(500):
+      c = slow.update(12.0, md, True)
+    assert c == 0.0
+
+  def test_rivian_line_margin(self):
+    # straight, 20 cm clear of the right line: inside the 25 cm line margin, pushes left
+    car_y = 1.4 - BRAND_TUNING["rivian"]["car_half_width"] - 0.20
+    assert settle(LaneGuard(**BRAND_TUNING["rivian"]), make_model(car_y, lane_width=2.8, curve=0.0)) < 0.0
+    # 30 cm clear: leaves it alone
+    car_y = 1.4 - BRAND_TUNING["rivian"]["car_half_width"] - 0.30
+    assert settle(LaneGuard(**BRAND_TUNING["rivian"]), make_model(car_y, lane_width=2.8, curve=0.0)) == 0.0
