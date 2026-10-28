@@ -14,7 +14,7 @@ from openpilot.common.swaglog import cloudlog
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.vehicle_model import VehicleModel
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
-from openpilot.selfdrive.controls.lib.lane_guard import CAR_HALF_WIDTH, CAR_HALF_WIDTHS, LaneGuard
+from openpilot.selfdrive.controls.lib.lane_guard import BRAND_TUNING, LaneGuard
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, STEER_ANGLE_SATURATION_THRESHOLD
@@ -72,7 +72,7 @@ class Controls(ControlsExt):
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
 
-    self.lane_guard = LaneGuard(car_half_width=CAR_HALF_WIDTHS.get(self.CP.brand, CAR_HALF_WIDTH))
+    self.lane_guard = LaneGuard(**BRAND_TUNING.get(self.CP.brand, {}))
     self.lane_guard_enabled = self.params.get_bool("LaneGuardEnabled")
     self.left_hand_traffic = self.params.get_bool("IsRhdDetected")  # a right-hand drive car most likely drives on the left
     self.LoC = LongControl(self.CP, self.CP_SP)

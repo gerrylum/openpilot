@@ -2,7 +2,7 @@ import numpy as np
 
 from openpilot.cereal import log
 from openpilot.common.test import OpenpilotTestCase
-from openpilot.selfdrive.controls.lib.lane_guard import CAR_HALF_WIDTH, CAR_HALF_WIDTHS, LANE_CHANGE_COOLDOWN, MAX_LAT_ACCEL, MAX_LAT_JERK, LaneGuard
+from openpilot.selfdrive.controls.lib.lane_guard import BRAND_TUNING, CAR_HALF_WIDTH, LANE_CHANGE_COOLDOWN, MAX_LAT_ACCEL, MAX_LAT_JERK, LaneGuard
 from openpilot.selfdrive.controls.lib.ldw import CAMERA_OFFSET
 from openpilot.selfdrive.modeld.constants import ModelConstants
 
@@ -162,4 +162,28 @@ class TestLaneGuard(OpenpilotTestCase):
     # a Model Y body 18 cm clear of the left line is outside MARGIN, the 9 cm wider Rivian body is inside it
     car_y = -(1.3 - CAR_HALF_WIDTH - 0.18)
     assert settle(LaneGuard(), make_model(car_y, lane_width=2.6)) == 0.0
-    assert settle(LaneGuard(car_half_width=CAR_HALF_WIDTHS["rivian"]), make_model(car_y, lane_width=2.6)) > 0.0
+    assert settle(LaneGuard(car_half_width=BRAND_TUNING["rivian"]["car_half_width"]), make_model(car_y, lane_width=2.6)) > 0.0
+
+  def test_rivian_tune_is_gentler(self):
+    # same push, the Rivian tune caps lower and ramps slower
+    md = make_model(-(1.3 - CAR_HALF_WIDTH + 0.10), lane_width=2.6)
+    tune = BRAND_TUNING["rivian"]
+    stock, rivian = LaneGuard(), LaneGuard(**tune)
+    stock_c, rivian_c = [], []
+    for _ in range(300):
+      stock_c.append(stock.update(V_EGO, md, True))
+      rivian_c.append(rivian.update(V_EGO, md, True))
+    assert 0.0 < max(rivian_c) <= tune["max_lat_accel"] / V_EGO ** 2 + 1e-9
+    assert max(rivian_c) < max(stock_c)
+    # slower start: after 0.2 s the stock guard is further along
+    assert rivian_c[20] < stock_c[20]
+    assert max(np.diff(rivian_c)) <= tune["max_lat_jerk"] / V_EGO ** 2 * 0.01 + 1e-9
+
+  def test_short_blip_is_filtered(self):
+    # a 0.2 s target blip barely reaches the wheel with the Rivian low-pass
+    md_push, md_clear = make_model(-(1.3 - CAR_HALF_WIDTH + 0.10), lane_width=2.6), make_model()
+    stock, rivian = LaneGuard(), LaneGuard(**BRAND_TUNING["rivian"])
+    seq = [md_clear] * 50 + [md_push] * 20 + [md_clear] * 100
+    stock_peak = max(abs(stock.update(V_EGO, md, True)) for md in seq)
+    rivian_peak = max(abs(rivian.update(V_EGO, md, True)) for md in seq)
+    assert rivian_peak < 0.5 * stock_peak
