@@ -2,7 +2,7 @@ import numpy as np
 
 from openpilot.cereal import log
 from openpilot.common.test import OpenpilotTestCase
-from openpilot.selfdrive.controls.lib.lane_guard import CAR_HALF_WIDTH, LANE_CHANGE_COOLDOWN, MAX_LAT_ACCEL, MAX_LAT_JERK, LaneGuard
+from openpilot.selfdrive.controls.lib.lane_guard import CAR_HALF_WIDTH, CAR_HALF_WIDTHS, LANE_CHANGE_COOLDOWN, MAX_LAT_ACCEL, MAX_LAT_JERK, LaneGuard
 from openpilot.selfdrive.controls.lib.ldw import CAMERA_OFFSET
 from openpilot.selfdrive.modeld.constants import ModelConstants
 
@@ -157,3 +157,9 @@ class TestLaneGuard(OpenpilotTestCase):
     md = make_model(-1.0, lane_width=2.6)
     settle(guard, md)
     assert settle(guard, md, active=False) == 0.0
+
+  def test_wider_body_pushes_earlier(self):
+    # a Model Y body 18 cm clear of the left line is outside MARGIN, the 9 cm wider Rivian body is inside it
+    car_y = -(1.3 - CAR_HALF_WIDTH - 0.18)
+    assert settle(LaneGuard(), make_model(car_y, lane_width=2.6)) == 0.0
+    assert settle(LaneGuard(car_half_width=CAR_HALF_WIDTHS["rivian"]), make_model(car_y, lane_width=2.6)) > 0.0

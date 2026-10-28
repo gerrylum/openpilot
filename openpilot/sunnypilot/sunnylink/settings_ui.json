@@ -2244,6 +2244,12 @@
           ]
         },
         {
+          "key": "LaneGuardEnabled",
+          "widget": "toggle",
+          "title": "Lane Guard (Testing)",
+          "description": "Adds a small steering correction on top of the driving model so the truck's body stays inside the lane lines in curves and never crosses a road edge. It does nothing while the planned path stays clear of them, and pauses while you steer or use a blinker."
+        },
+        {
           "key": "RivianForceTorqueSteering",
           "widget": "toggle",
           "title": "Torque-Only Steering (Testing)",

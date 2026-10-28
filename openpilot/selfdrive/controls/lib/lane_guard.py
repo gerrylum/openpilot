@@ -11,6 +11,7 @@ LaneChangeState = log.LaneChangeState
 # crosses a road edge. It stays at zero while the model's planned path keeps MARGIN clear of them.
 
 CAR_HALF_WIDTH = 1.921 / 2  # m, Model Y body without mirrors
+CAR_HALF_WIDTHS = {"rivian": 2.014 / 2}  # m, body without mirrors by brand, R1T and R1S share the platform width
 MARGIN = 0.15  # m, gap to keep between the body and a line or road edge
 LOOKAHEAD_T = (1.0, 1.5, 2.0)  # s, points of the planned path that are checked, closer ones oscillate with the steering lag
 MIN_LOOKAHEAD_DIST = 10.0  # m
@@ -36,7 +37,7 @@ def get_lane_curvature(v_ego, lines):
   return 2 * np.polyfit(xs, center, 2)[0]
 
 
-def get_lane_guard_curvature(v_ego, path_x, path_y, left, right, left_edge, right_edge, left_hand_traffic=False):
+def get_lane_guard_curvature(v_ego, path_x, path_y, left, right, left_edge, right_edge, left_hand_traffic=False, car_half_width=CAR_HALF_WIDTH):
   # left, right, left_edge, right_edge are (x, y) or None when not trusted.
   # On straights the model leaves the lane on purpose, to pass parked cars or make room in a bike lane for oncoming traffic,
   # so lane lines are only guarded in curves. Without the curb line (right, left in left-hand traffic), the other one is often
@@ -50,12 +51,12 @@ def get_lane_guard_curvature(v_ego, path_x, path_y, left, right, left_edge, righ
     x = np.interp(t, ModelConstants.T_IDXS, path_x)
     car_y = np.interp(t, ModelConstants.T_IDXS, path_y) - CAMERA_OFFSET
     near = t <= MAX_EDGE_T
-    gaps_left = [(car_y - CAR_HALF_WIDTH) - np.interp(x, *left_edge)] if left_edge is not None and near else []
-    gaps_right = [np.interp(x, *right_edge) - (car_y + CAR_HALF_WIDTH)] if right_edge is not None and near else []
+    gaps_left = [(car_y - car_half_width) - np.interp(x, *left_edge)] if left_edge is not None and near else []
+    gaps_right = [np.interp(x, *right_edge) - (car_y + car_half_width)] if right_edge is not None and near else []
     if curve:
-      left_gap = (car_y - CAR_HALF_WIDTH) - np.interp(x, *left) if left is not None else None
-      right_gap = np.interp(x, *right) - (car_y + CAR_HALF_WIDTH) if right is not None else None
-      lane_width = left_gap + right_gap + 2 * CAR_HALF_WIDTH if left is not None and right is not None else None
+      left_gap = (car_y - car_half_width) - np.interp(x, *left) if left is not None else None
+      right_gap = np.interp(x, *right) - (car_y + car_half_width) if right is not None else None
+      lane_width = left_gap + right_gap + 2 * car_half_width if left is not None and right is not None else None
       if lane_width is None or lane_width >= MIN_LANE_WIDTH:
         # without a center line the far line is often the other road edge, keep guarding the curb line
         if left_gap is not None and (left_hand_traffic or lane_width < MAX_LANE_WIDTH):
@@ -82,8 +83,9 @@ def get_lane_guard_curvature(v_ego, path_x, path_y, left, right, left_edge, righ
 
 
 class LaneGuard:
-  def __init__(self, dt=DT_CTRL):
+  def __init__(self, dt=DT_CTRL, car_half_width=CAR_HALF_WIDTH):
     self.dt = dt
+    self.car_half_width = car_half_width
     self.curvature = 0.0
     self.lane_change_timer = 0.0
     self.line_valid = [False, False]  # left, right
@@ -109,7 +111,8 @@ class LaneGuard:
        len(lane_lines) == 4 and len(model_v2.laneLineStds) == 4 and len(road_edges) == 2 and len(model_v2.roadEdgeStds) == 2:
       left, right = ((lane_lines[idx].x, lane_lines[idx].y) if self.line_valid[i] else None for i, idx in enumerate((1, 2)))
       left_edge, right_edge = ((edge.x, edge.y) if std < MAX_EDGE_STD else None for edge, std in zip(road_edges, model_v2.roadEdgeStds, strict=True))
-      target = get_lane_guard_curvature(v_ego, model_v2.position.x, model_v2.position.y, left, right, left_edge, right_edge, left_hand_traffic)
+      target = get_lane_guard_curvature(v_ego, model_v2.position.x, model_v2.position.y, left, right, left_edge, right_edge, left_hand_traffic,
+                                        self.car_half_width)
 
     max_change = MAX_LAT_JERK / max(v_ego, MIN_SPEED) ** 2 * self.dt
     self.curvature = float(np.clip(target, self.curvature - max_change, self.curvature + max_change))
