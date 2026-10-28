@@ -21,8 +21,6 @@ class CarState(CarStateBase, CarStateExt):
     self.hands_on_level = 0
     self.eac_status = 0
     self.eac_error_code = 0
-    self.long_cmd_rejected_counter = 0
-    self.long_cmd_rejected_updated = False
     self.acm_fault_supervisor_state = 0
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
@@ -109,11 +107,6 @@ class CarState(CarStateBase, CarStateExt):
     # This message can lag and send two messages at once, make sure we forward all of them
     adas_status_msgs = cp.vl_all["VDM_AdasSts"]
     self.vdm_adas_status = [dict(zip(adas_status_msgs, vals, strict=True)) for vals in zip(*adas_status_msgs.values(), strict=True)]
-    # our own longitudinal frames the panda rejected (bus 192 echo)
-    rejected = can_parsers[Bus.loopback].vl_all["ACM_longitudinalRequest"]["ACM_longitudinalRequest_Counter"]
-    self.long_cmd_rejected_updated = len(rejected) > 0
-    if self.long_cmd_rejected_updated:
-      self.long_cmd_rejected_counter = int(rejected[-1])
 
     # not 0 while the ACM is not ready to take ACC (e.g. the first ~60 s after the truck wakes), see carcontroller
     self.acm_fault_supervisor_state = int(cp_cam.vl["ACM_Status"]["ACM_FaultSupervisorState"])
@@ -132,7 +125,5 @@ class CarState(CarStateBase, CarStateExt):
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0),
       Bus.adas: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 1),
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 2),
-      # 192 = safety-rejected TX echo of bus 0
-      Bus.loopback: CANParser(DBC[CP.carFingerprint][Bus.pt], [("ACM_longitudinalRequest", float('nan'))], 192),
       **CarStateExt.get_parser(CP, CP_SP),
     }

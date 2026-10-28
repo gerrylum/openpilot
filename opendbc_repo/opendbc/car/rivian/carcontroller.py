@@ -80,10 +80,7 @@ class CarController(CarControllerBase, MadsCarController):
       # CC.enabled lags the ACM clearing its feature status by the selfdrived/controlsd round trip
       long_enabled = CC.enabled and CS.out.cruiseState.enabled
       accel = float(np.clip(actuators.accel, CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX)) if long_enabled else 0.0
-      # a rejected frame never reached the bus, resend its counter if nothing newer went out
-      resend = CS.long_cmd_rejected_updated and CS.long_cmd_rejected_counter == self.long_cmd_counter % 15
-      if not resend:
-        self.long_cmd_counter += 1
+      self.long_cmd_counter += 1
       can_sends.append(create_longitudinal(self.packer, self.long_cmd_counter, accel, long_enabled))
 
       # If openpilot would refuse to engage (NO_ENTRY), hide the driver's ACC engage request from the ACM so it never
