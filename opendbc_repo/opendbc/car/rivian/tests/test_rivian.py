@@ -70,3 +70,17 @@ class TestEngageFeedback(unittest.TestCase):
     assert self._run(press, engageable=True, acm_fault=1) == [(50, 'notReady')]
     assert self._run(press, engageable=True, v_ego=15.) == []  # fast enough, the ACM gave no reason we know
     assert self._run(press, engageable=True, cruise=True) == []  # the ACM took it
+
+
+class TestLongitudinal(unittest.TestCase):
+  def test_pedal_zeroes_accel_at_once(self):
+    CP = CarInterface.get_non_essential_params(CAR.RIVIAN_R1)
+    CP.openpilotLongitudinalControl = True
+    CI = CarInterface(CP, structs.CarParamsSP())
+    CS, vl = CI.CS, {b: CI.can_parsers[b].vl for b in (Bus.pt, Bus.cam)}
+    CS.acm_lka_hba_cmd, CS.sccm_wheel_touch, CS.vdm_adas_status = vl[Bus.cam]["ACM_lkaHbaCmd"], vl[Bus.pt]["SCCM_WheelTouch"], [vl[Bus.pt]["VDM_AdasSts"]]
+    cc = structs.CarControl(enabled=True, actuators={"accel": -0.7}).as_reader()  # carControl is still braking
+    for pedals, accel in (({}, -0.7), ({"gasPressed": True}, 0.0), ({"brakePressed": True}, 0.0)):
+      CS.out = structs.CarState(cruiseState={"enabled": True}, **pedals)
+      dat = next(d for a, d, _ in CI.CC.update(cc, structs.CarControlSP(), CS, 0)[1] if a == 0x160)
+      assert round(((dat[2] << 3) | (dat[3] >> 5)) * 0.01 - 10.24, 2) == accel, pedals

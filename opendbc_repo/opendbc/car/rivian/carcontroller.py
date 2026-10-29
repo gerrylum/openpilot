@@ -69,7 +69,9 @@ class CarController(CarControllerBase, MadsCarController):
     if self.CP.openpilotLongitudinalControl:
       # CC.enabled lags the ACM clearing its feature status by the selfdrived/controlsd round trip
       long_enabled = CC.enabled and CS.out.cruiseState.enabled
-      accel = float(np.clip(actuators.accel, CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX)) if long_enabled else 0.0
+      # the panda blocks accel the moment a pedal is pressed, zero it then too instead of when carControl catches up
+      pedal = CS.out.gasPressed or CS.out.brakePressed
+      accel = float(np.clip(actuators.accel, CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX)) if long_enabled and not pedal else 0.0
       self.long_cmd_counter += 1
       can_sends.append(create_longitudinal(self.packer, self.long_cmd_counter, accel, long_enabled))
 
