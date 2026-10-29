@@ -208,6 +208,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"MadsMainCruiseAllowed", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"MadsSteeringMode", {PERSISTENT | BACKUP, INT, "0"}},
     {"MadsUnifiedEngagementMode", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"MadsMinEngageSpeed", {PERSISTENT | BACKUP, INT, "5"}},  // always stored in mph; 0 = disabled
 
     // Model Manager params
     {"ModelManager_ActiveBundle", {PERSISTENT, JSON}},
@@ -242,6 +243,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     // sunnypilot car specific params
     {"HyundaiLongitudinalTuning", {PERSISTENT | BACKUP, INT, "0"}},
+    {"RivianEnhancedMads", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"RivianOfftrackCompensationEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"RivianOfftrackCompensationGain", {PERSISTENT | BACKUP, FLOAT, "0.5"}},
     {"RivianR1SWheelbase", {PERSISTENT | BACKUP, BOOL, "0"}},

@@ -408,6 +408,35 @@ class MadsSafetyTestBase(unittest.TestCase):
     self.assertTrue(self.safety.get_controls_allowed_lateral(),
                     "Counter should have reset; 2 mismatches after reset should not disengage")
 
+  def test_heartbeat_engaged_mads_reengage_after_mismatch(self):
+    # a heartbeat exit resets the mismatch counter, so a re-engage gets a full grace window
+    self.safety.set_mads_params(True, False, False)
+    self.safety.set_controls_allowed_lateral(True)
+    self.safety.set_heartbeat_engaged_mads(False)
+    for _ in range(3):
+      self.safety.mads_heartbeat_engaged_check()
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+    self.safety.set_controls_allowed_lateral(True)
+    self.safety.mads_heartbeat_engaged_check()
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+
+  def test_heartbeat_engaged_mads_reengage_before_mismatch_exit(self):
+    # a MADS press before the third mismatch tick is a new engage with a full grace window
+    self.safety.set_mads_params(True, False, False)
+    for press in (1, 0):
+      self.safety.set_mads_button_press(press)
+      self._rx(self._speed_msg(0))
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+
+    self.safety.set_heartbeat_engaged_mads(False)
+    for _ in range(2):
+      self.safety.mads_heartbeat_engaged_check()
+    self.safety.set_mads_button_press(1)
+    self._rx(self._speed_msg(0))
+    self.safety.mads_heartbeat_engaged_check()
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+
   def test_mads_button_not_engaged_without_press(self):
     """Test that MADS button in idle state does not engage lateral control"""
     try:

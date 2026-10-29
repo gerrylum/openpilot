@@ -11,6 +11,7 @@ from opendbc.car import Bus, structs
 from opendbc.can.parser import CANParser
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.rivian.values import DBC
+from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 
 ButtonType = structs.CarState.ButtonEvent.Type
@@ -30,6 +31,24 @@ class CarStateExt:
     self.distance_button = 0
     self.increase_counter = 0
     self.decrease_counter = 0
+    self.stalk = 0
+    self.lkas_pending = False
+
+  def update_stalk(self, ret: structs.CarState, cp: CANParser) -> list[structs.CarState.ButtonEvent]:
+    # VDM_UserAdasRequest: 0 idle, 1 UP_1 (MADS toggle), 2 UP_2 (full pull, cancels)
+    req, prev = int(cp.vl["VDM_AdasSts"]["VDM_UserAdasRequest"]), self.stalk
+    self.stalk = req
+    events = []
+    # UP_1 is sent a frame late, so passing through it on the way to UP_2 is not a toggle
+    if self.lkas_pending and req != 2:
+      events.append(structs.CarState.ButtonEvent(pressed=True, type=ButtonType.lkas))
+    # in Disengage mode UP_1 with ACC on only cancels the ACC (card sets alternativeExperience after this is built)
+    acc_cancel = ret.cruiseState.enabled and self.CP.alternativeExperience & ALTERNATIVE_EXPERIENCE.MADS_DISENGAGE_LATERAL_ON_BRAKE
+    self.lkas_pending = req == 1 and prev not in (1, 2) and not acc_cancel
+    # UP_2 as altButton2, so car_specific disengages MADS and blocks the cruise engage
+    if (req == 2) != (prev == 2):
+      events.append(structs.CarState.ButtonEvent(pressed=req == 2, type=ButtonType.altButton2))
+    return events
 
   def update_longitudinal_upgrade(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
     cp_park = can_parsers[Bus.alt]
@@ -90,6 +109,9 @@ class CarStateExt:
   def update(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
     if self.CP_SP.flags & RivianFlagsSP.LONGITUDINAL_HARNESS_UPGRADE:
       self.update_longitudinal_upgrade(ret, can_parsers)
+
+    if self.CP_SP.flags & RivianFlagsSP.ENHANCED_MADS and (events := self.update_stalk(ret, can_parsers[Bus.pt])):
+      ret.buttonEvents = [*(e.to_dict() for e in ret.buttonEvents), *events]  # copied, a capnp list is wiped on reassign
 
   @staticmethod
   def get_parser(CP, CP_SP) -> dict[StrEnum, CANParser]:

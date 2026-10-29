@@ -26,6 +26,16 @@ sections:
       key: Mads
       equals: true
     items:
+    - key: RivianEnhancedMads
+      widget: toggle
+      title: Use enhanced Rivian MADS
+      description: Rivian only. A click up on the stalk turns steering assist on or off, all brake modes can be chosen,
+        a minimum engage speed can be set, and shifting to Park or Reverse or a full stalk pull turns MADS off. Off, MADS
+        works as in stock sunnypilot.
+      needs_onroad_cycle: true
+      enablement:
+      - $ref: '#/macros/offroad'
+      - {type: capability, field: brand, equals: rivian}
     - key: MadsMainCruiseAllowed
       widget: toggle
       title: Toggle with Main Cruise
@@ -49,15 +59,31 @@ sections:
       - value: 0
         label: Remain Active
         enablement:
-        - $ref: '#/macros/mads_full_platforms'
+        - $ref: '#/macros/mads_steering_full_platforms'
       - value: 1
         label: Pause
         enablement:
-        - $ref: '#/macros/mads_full_platforms'
+        - $ref: '#/macros/mads_steering_full_platforms'
       - value: 2
         label: Disengage
       enablement:
       - $ref: '#/macros/offroad'
+    - key: MadsMinEngageSpeed
+      widget: option
+      title: Minimum Speed to Engage MADS
+      description: Rivian with enhanced MADS. Below this speed the stalk can not turn steering assist on, and in Pause mode
+        it only resumes after the brake once above it. Engaging cruise is not limited. 0 = no minimum.
+      min: 0
+      max: 20
+      step: 1
+      unit:
+        metric: km/h
+        imperial: mph
+      needs_onroad_cycle: true
+      enablement:
+      - $ref: '#/macros/offroad'
+      - {type: capability, field: brand, equals: rivian}
+      - {type: param, key: RivianEnhancedMads, equals: true}
 - id: blinker
   title: Blinker Control
   description: Lateral pause behavior during turn signals

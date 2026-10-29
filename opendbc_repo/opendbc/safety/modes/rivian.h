@@ -3,7 +3,7 @@
 #include "opendbc/safety/declarations.h"
 
 static uint8_t rivian_get_counter(const CANPacket_t *msg) {
-  // Signal: ESP_Status_Counter, VDM_PropStatus_Counter
+  // Signal: ESP_Status_Counter, VDM_PropStatus_Counter, VDM_AdasSts_Counter
   return msg->data[1] & 0xFU;
 }
 
@@ -38,6 +38,9 @@ static uint32_t rivian_compute_checksum(const CANPacket_t *msg) {
   }
   if (msg->addr == 0x100U) {
     chksum = _rivian_compute_checksum(msg, 0x1D, 0x5F);
+  }
+  if (msg->addr == 0x162U) {
+    chksum = _rivian_compute_checksum(msg, 0x1D, 0xD1);
   }
   return chksum;
 }
@@ -85,6 +88,13 @@ static void rivian_rx_hook(const CANPacket_t *msg) {
     // Stored as degrees * 10 to match angle_deg_to_can
     int angle_meas_new = ((msg->data[5] << 6) | (msg->data[6] >> 2)) - 8192U;
     update_sample(&angle_meas, angle_meas_new);
+  }
+
+  // VDM_AdasSts, only checked with enhanced MADS: a stalk click up (UP_1) toggles MADS. With ACC engaged
+  // openpilot reads UP_1 as a cancel, so it is not a MADS press there or the two MADS states desync.
+  if (msg_matches(msg, 0x162U, 0U)) {
+    const bool up_1 = (msg->data[7] & 0x7U) == 1U;
+    mads_button_press = (up_1 && !cruise_engaged_prev) ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
   }
 
   // Brake pressed
@@ -199,6 +209,7 @@ static safety_config rivian_init(uint16_t param) {
     {.msg = {{0x380, 0, 5, 100U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  // EPAS_SystemStatus (driver torque)
     {.msg = {{0x390, 0, 7, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},  // EPAS_AdasStatus (measured angle)
     {.msg = {{0x100, 2, 8, 100U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  // ACM_Status (cruise state)
+    {.msg = {{0x162, 0, 8, 50U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // VDM_AdasSts (stalk), enhanced MADS only
   };
 
   bool rivian_longitudinal = false;
@@ -212,8 +223,13 @@ static safety_config rivian_init(uint16_t param) {
   // FIXME: cppcheck thinks that rivian_longitudinal is always false. This is not true
   // if ALLOW_DEBUG is defined but cppcheck is run without ALLOW_DEBUG
   // cppcheck-suppress knownConditionTrueFalse
-  return rivian_longitudinal ? BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_LONG_TX_MSGS) : \
-                               BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_TX_MSGS);
+  safety_config ret = rivian_longitudinal ? BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_LONG_TX_MSGS) : \
+                                            BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_TX_MSGS);
+  const uint16_t RIVIAN_PARAM_SP_ENHANCED_MADS = 1;
+  if (!GET_FLAG(current_safety_param_sp, RIVIAN_PARAM_SP_ENHANCED_MADS)) {
+    ret.rx_checks_len -= 1;  // no stalk check
+  }
+  return ret;
 }
 
 const safety_hooks rivian_hooks = {

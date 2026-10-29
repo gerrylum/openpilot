@@ -14,7 +14,7 @@ from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.network import NavButton
 from openpilot.system.ui.widgets.scroller_tici import Scroller
-from openpilot.system.ui.sunnypilot.widgets.list_view import multiple_button_item_sp, toggle_item_sp
+from openpilot.system.ui.sunnypilot.widgets.list_view import multiple_button_item_sp, option_item_sp, toggle_item_sp
 
 MADS_STEERING_MODE_OPTIONS = [
   (tr("Remain Active"), tr_noop("Remain Active: ALC will remain active when the brake pedal is pressed.")),
@@ -32,6 +32,9 @@ STATUS_CHECK_COMPATIBILITY = tr("Start the vehicle to check vehicle compatibilit
 DEFAULT_TO_OFF = tr("This feature defaults to OFF, and does not allow selection due to vehicle limitations.")
 DEFAULT_TO_ON = tr("This feature defaults to ON, and does not allow selection due to vehicle limitations.")
 STATUS_DISENGAGE_ONLY = tr("This platform only supports Disengage mode due to vehicle limitations.")
+RIVIAN_ENHANCED_MADS_DESC = tr("Rivian only. A click up on the stalk turns steering assist on or off, all brake modes can be chosen, " +
+                               "a minimum engage speed can be set, and shifting to Park or Reverse or a full stalk pull turns MADS off. " +
+                               "Off, MADS works as in stock sunnypilot. Takes effect after changing from OffRoad to OnRoad.")
 
 
 class MadsSettingsLayout(Widget):
@@ -43,6 +46,12 @@ class MadsSettingsLayout(Widget):
     self._scroller = Scroller(self.items, line_separator=True, spacing=0)
 
   def _initialize_items(self):
+    self._rivian_enhanced_mads_toggle = toggle_item_sp(
+      title=lambda: tr("Use enhanced Rivian MADS"),
+      description=RIVIAN_ENHANCED_MADS_DESC,
+      param="RivianEnhancedMads",
+      enabled=lambda: ui_state.is_offroad(),
+    )
     self._main_cruise_toggle = toggle_item_sp(
       title=lambda: tr("Toggle with Main Cruise"),
       description=MADS_MAIN_CRUISE_BASE_DESC,
@@ -63,10 +72,24 @@ class MadsSettingsLayout(Widget):
       callback=self._update_steering_mode_description,
     )
 
+    self._min_engage_speed = option_item_sp(
+      param="MadsMinEngageSpeed",
+      title=lambda: tr("Minimum Speed to Engage MADS"),
+      min_value=0,
+      max_value=20,
+      value_change_step=1,
+      description=lambda: tr("Rivian with enhanced MADS. Below this speed the stalk can't turn steering assist on, and in Pause mode " +
+                             "it only resumes after the brake once above it. Engaging cruise is not limited. 0 = no minimum. " +
+                             "Takes effect after changing from OffRoad to OnRoad."),
+      label_callback=lambda speed: f'{round(speed * 1.60934)} km/h' if ui_state.is_metric else f'{speed} mph',
+    )
+
     self.items = [
+      self._rivian_enhanced_mads_toggle,
       self._main_cruise_toggle,
       self._unified_engagement_toggle,
       self._steering_mode,
+      self._min_engage_speed,
     ]
 
   def _update_state(self):
@@ -84,7 +107,7 @@ class MadsSettingsLayout(Widget):
     self._scroller.show_event()
 
   @staticmethod
-  def _mads_limited_settings() -> bool:
+  def _get_brand() -> str:
     brand = ""
     if ui_state.is_offroad():
       bundle = ui_state.params.get("CarPlatformBundle")
@@ -92,9 +115,14 @@ class MadsSettingsLayout(Widget):
         brand = bundle.get("brand", "")
     if not brand:
       brand = ui_state.CP.brand if ui_state.CP is not None else ""
+    return brand
+
+  @staticmethod
+  def _mads_limited_settings() -> bool:
+    brand = MadsSettingsLayout._get_brand()
 
     if brand == "rivian":
-      return True
+      return not ui_state.params.get_bool("RivianEnhancedMads")
     elif brand == "tesla":
       if ui_state.CP_SP is None or not ui_state.CP_SP.flags & TeslaFlagsSP.HAS_VEHICLE_BUS:
         return True
@@ -112,8 +140,11 @@ class MadsSettingsLayout(Widget):
     self._steering_mode.show_description(True)
 
   def _update_toggles(self):
+    rivian = self._get_brand() == "rivian"
+    self._rivian_enhanced_mads_toggle.set_visible(rivian)
     self._update_steering_mode_description(self._steering_mode.action_item.get_selected_button())
-    if self._mads_limited_settings():
+    limited = self._mads_limited_settings()
+    if limited:
       ui_state.params.remove("MadsMainCruiseAllowed")
       ui_state.params.put_bool("MadsUnifiedEngagementMode", True)
       ui_state.params.put("MadsSteeringMode", MadsSteeringModeOnBrake.DISENGAGE)
@@ -138,3 +169,12 @@ class MadsSettingsLayout(Widget):
 
       self._steering_mode.action_item.set_enabled(True)
       self._steering_mode.action_item.set_enabled_buttons(None)
+
+    self._min_engage_speed.action_item.set_enabled(rivian and not limited)
+    if rivian and not limited:  # enhanced: no ACC main button, and lateral always engages with cruise
+      self._main_cruise_toggle.action_item.set_enabled(False)
+      self._main_cruise_toggle.action_item.set_state(False)
+      self._main_cruise_toggle.set_description("<b>" + DEFAULT_TO_OFF + "</b><br>" + MADS_MAIN_CRUISE_BASE_DESC)
+      self._unified_engagement_toggle.action_item.set_enabled(False)
+      self._unified_engagement_toggle.action_item.set_state(True)
+      self._unified_engagement_toggle.set_description("<b>" + DEFAULT_TO_ON + "</b><br>" + MADS_UNIFIED_ENGAGEMENT_MODE_BASE_DESC)

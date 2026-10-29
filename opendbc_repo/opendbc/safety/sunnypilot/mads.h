@@ -88,6 +88,8 @@ inline void m_update_control_state(void) {
       (m_mads_state.mads_button.transition == MADS_EDGE_RISING) ||
       (m_mads_state.op_controls_allowed.transition == MADS_EDGE_RISING)) {
     m_mads_state.controls_requested_lateral = true;
+    // a new engage gets a full heartbeat grace window, a stale mismatch would kill it on the next tick
+    heartbeat_engaged_mads_mismatches = 0U;
   }
 
   // Primary control blockers - these prevent any further control processing
@@ -173,6 +175,8 @@ inline void mads_exit_controls(const DisengageReason reason) {
     m_mads_state.controls_requested_lateral = false;
     controls_allowed_lateral = false;
   }
+  // a heartbeat exit leaves the counter saturated, which would kill the next engage on its first tick
+  heartbeat_engaged_mads_mismatches = 0U;
 }
 
 inline void mads_state_update(const bool op_vehicle_moving, const bool op_acc_main, const bool op_allowed, const bool is_braking, const bool _steering_disengage) {

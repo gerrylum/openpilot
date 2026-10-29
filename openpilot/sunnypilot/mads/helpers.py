@@ -9,6 +9,7 @@ from openpilot.common.params import Params
 from opendbc.car import structs
 from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP, HyundaiSafetyFlagsSP
+from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 from opendbc.sunnypilot.car.tesla.values import MadsScreenButtonType, TeslaFlagsSP
 
 
@@ -22,8 +23,8 @@ class MadsSteeringModeOnBrake:
 
 
 def get_mads_limited_brands(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params: Params) -> bool:
-  if CP.brand == 'rivian':
-    return True
+  if CP.brand == 'rivian':  # enhanced MADS brings the stalk as a consistent toggle
+    return not CP_SP.flags & RivianFlagsSP.ENHANCED_MADS
   if CP.brand == 'tesla':
     if not CP_SP.flags & TeslaFlagsSP.HAS_VEHICLE_BUS:
       return True
@@ -65,12 +66,16 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
   # MADS Partial Support
   # MADS is currently partially supported for these platforms due to lack of consistent states to engage controls
   # Only MadsSteeringModeOnBrake.DISENGAGE is supported for these platforms
-  # TODO-SP: To enable MADS full support for Rivian and most Tesla, identify consistent signals for MADS toggling
+  # TODO-SP: To enable MADS full support for most Tesla, identify consistent signals for MADS toggling
   mads_partial_support = get_mads_limited_brands(CP, CP_SP, params)
   if mads_partial_support:
     params.put("MadsSteeringMode", 2, block=True)
+  if mads_partial_support or CP.brand == "rivian":  # Rivian always engages lateral with cruise
     params.put_bool("MadsUnifiedEngagementMode", True, block=True)
 
   # no ACC MAIN button for these brands
   if CP.brand in MADS_NO_ACC_MAIN_BUTTON:
-    params.remove("MadsMainCruiseAllowed")
+    if CP.brand == "rivian" and CP_SP.flags & RivianFlagsSP.ENHANCED_MADS:
+      params.put_bool("MadsMainCruiseAllowed", False)
+    else:
+      params.remove("MadsMainCruiseAllowed")
