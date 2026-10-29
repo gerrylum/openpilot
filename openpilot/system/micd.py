@@ -102,7 +102,7 @@ class Mic:
 
         self.measurements = self.measurements[FFT_SAMPLES:]
 
-  @retry(attempts=10, delay=3)
+  @retry(attempts=40, delay=3)  # the sound card can take ~30 s to appear at boot
   def get_stream(self, sd):
     # reload sounddevice to reinitialize portaudio
     sd._terminate()

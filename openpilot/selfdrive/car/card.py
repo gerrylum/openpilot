@@ -320,7 +320,8 @@ class Car:
 
 
 def main():
-  config_realtime_process(4, Priority.CTRL_HIGH)
+  # one notch above selfdrived and controlsd on core 4, so a slow step in either never starves the car of commands
+  config_realtime_process(4, Priority.CTRL_HIGH + 1)
   car = Car()
   car.card_thread()
 

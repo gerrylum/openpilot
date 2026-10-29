@@ -168,7 +168,7 @@ class Soundd(QuietMode):
     volume = ((weighted_db - AMBIENT_DB) / DB_SCALE) * (MAX_VOLUME - MIN_VOLUME) + MIN_VOLUME
     return math.pow(VOLUME_BASE, (np.clip(volume, MIN_VOLUME, MAX_VOLUME) - 1))
 
-  @retry(attempts=10, delay=3)
+  @retry(attempts=40, delay=3)  # the sound card can take ~30 s to appear at boot
   def get_stream(self, sd):
     # reload sounddevice to reinitialize portaudio
     sd._terminate()
