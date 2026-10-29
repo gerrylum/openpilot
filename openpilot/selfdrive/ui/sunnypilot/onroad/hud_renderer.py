@@ -9,6 +9,7 @@ import pyray as rl
 from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.mici.onroad.torque_bar import TorqueBar
 from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui import DeveloperUiRenderer, DeveloperUiState, get_bottom_dev_ui_offset
+from openpilot.selfdrive.ui.sunnypilot.onroad.lateral_mode import lateral_mode
 from openpilot.selfdrive.ui.sunnypilot.onroad.road_name import RoadNameRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.rocket_fuel import RocketFuel
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_limit import SpeedLimitRenderer
@@ -37,6 +38,7 @@ class HudRendererSP(HudRenderer):
     self.circular_alerts_renderer = CircularAlertsRenderer()
     self.speed_renderer = SpeedRenderer()
     self._torque_bar = TorqueBar(scale=3.0, always=True)
+    self._wheel = gui_app.texture('icons/chffr_wheel.png', 144, 144)
 
     self.pcm_cruise_speed: bool = True
     self.show_icbm_status: bool = False
@@ -55,6 +57,7 @@ class HudRendererSP(HudRenderer):
 
     super()._update_state()
     self.road_name_renderer.update()
+    lateral_mode.update()
     self.speed_limit_renderer.update()
     self.smart_cruise_control_renderer.update()
     self.turn_signal_controller.update()
@@ -130,6 +133,12 @@ class HudRendererSP(HudRenderer):
 
   def _render(self, rect: rl.Rectangle) -> None:
     super()._render(rect)
+
+    # Rivian angle (green) or torque (blue) steering, where the experimental mode button used to be
+    if (tint := lateral_mode.wheel_tint) is not None:
+      center = rl.Vector2(rect.x + rect.width - 126, rect.y + 126)
+      rl.draw_circle_v(center, 96, rl.Color(0, 0, 0, 166))
+      rl.draw_texture_v(self._wheel, rl.Vector2(center.x - 72, center.y - 72), tint)
 
     if ui_state.torque_bar:
       torque_rect = rect
