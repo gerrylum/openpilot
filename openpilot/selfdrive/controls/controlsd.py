@@ -24,6 +24,7 @@ from openpilot.sunnypilot.modeld_v2.modeld_base import get_lat_smooth_seconds
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
+from openpilot.sunnypilot.selfdrive.controls.lib.rivian_offtrack import offtrack_curvature
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -38,6 +39,12 @@ class Controls(ControlsExt):
     cloudlog.info("controlsd is waiting for CarParams")
     self.CP = messaging.log_from_bytes(self.params.get("CarParams", block=True), car.CarParams)
     cloudlog.info("controlsd got CarParams")
+    if self.CP.brand == 'rivian' and self.params.get_bool("RivianR1SWheelbase"):
+      # the R1T and R1S share one platform, the R1S is shorter
+      cp = self.CP.as_builder()
+      cp.centerToFront *= 3.08 / cp.wheelbase
+      cp.wheelbase = 3.08
+      self.CP = cp.as_reader()
 
     # Initialize sunnypilot controlsd extension and base model state
     ControlsExt.__init__(self, self.CP, self.params)
@@ -53,6 +60,7 @@ class Controls(ControlsExt):
     self.steer_limited_by_safety = False
     self.curvature = 0.0
     self.desired_curvature = 0.0
+    self.offtrack_gain = 0.0
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -83,6 +91,11 @@ class Controls(ControlsExt):
     if self.sm.updated["deviceMotion"]:
       device_motion = Pose.from_device_motion(self.sm['deviceMotion'])
       self.calibrated_pose = self.pose_calibrator.build_calibrated_pose(device_motion)
+
+  def update_params_1hz(self):
+    if self.CP.brand == 'rivian':
+      on = self.params.get_bool("RivianOfftrackCompensationEnabled")
+      self.offtrack_gain = float(self.params.get("RivianOfftrackCompensationGain", return_default=True)) if on else 0.
 
   def state_control(self):
     CS = self.sm['carState']
@@ -145,10 +158,14 @@ class Controls(ControlsExt):
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
+    if self.sm.frame % int(1. / DT_CTRL) == 0:
+      self.update_params_1hz()
     if self.sm.valid['lateralManeuverPlan']:
       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+    if CC.latActive:
+      new_desired_curvature = offtrack_curvature(new_desired_curvature, self.CP.wheelbase, self.offtrack_gain)
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["lateralDelay"].lateralDelay + get_lat_smooth_seconds(CS.vEgo, LAT_SMOOTH_SECONDS)
 

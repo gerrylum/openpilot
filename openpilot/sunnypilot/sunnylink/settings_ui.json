@@ -2199,6 +2199,52 @@
         }
       ]
     },
+    "rivian": {
+      "title": "Rivian Settings",
+      "description": "",
+      "items": [
+        {
+          "key": "RivianR1SWheelbase",
+          "widget": "toggle",
+          "title": "I Drive an R1S (not R1T)",
+          "description": "The R1T and R1S can't be told apart automatically yet, so steering assumes the R1T's 3.45 m wheelbase. Turn this on for an R1S (3.08 m). Off-road only; takes effect on your next drive.",
+          "enablement": [
+            {
+              "type": "offroad_only"
+            }
+          ]
+        },
+        {
+          "key": "RivianOfftrackCompensationEnabled",
+          "widget": "toggle",
+          "title": "Rear-Axle Off-Tracking Compensation",
+          "description": "Widens tight turns so the rear wheels, which cut inside the front's path on the long wheelbase, are less likely to clip a curb. A geometric estimate, not curb sensing.",
+          "enablement": [
+            {
+              "type": "offroad_only"
+            }
+          ],
+          "sub_items": [
+            {
+              "key": "RivianOfftrackCompensationGain",
+              "widget": "option",
+              "title": "Compensation Gain",
+              "description": "0 = off, 1 = full geometric compensation.",
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.05,
+              "enablement": [
+                {
+                  "type": "param",
+                  "key": "RivianOfftrackCompensationEnabled",
+                  "equals": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
     "subaru": {
       "title": "Subaru Settings",
       "description": "",
