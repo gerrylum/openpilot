@@ -5,6 +5,7 @@ from collections.abc import Callable
 from openpilot.cereal import log
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos, FONT_SCALE
+from openpilot.system.ui.sunnypilot.brand import brand_asset
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.widgets import Widget
@@ -76,7 +77,7 @@ class Sidebar(Widget, SidebarSP):
     self._connect_status = MetricData(tr_noop("CONNECT"), tr_noop("OFFLINE"), Colors.WARNING)
     self._recording_audio = False
 
-    self._home_img = gui_app.texture("images/button_home.png", HOME_BTN.width, HOME_BTN.height)
+    self._home_img = gui_app.texture(brand_asset("home_button.png"), HOME_BTN.width, HOME_BTN.height)
     self._flag_img = gui_app.texture("images/button_flag.png", HOME_BTN.width, HOME_BTN.height)
     self._settings_img = gui_app.texture("images/button_settings.png", SETTINGS_BTN.width, SETTINGS_BTN.height)
     self._mic_img = gui_app.texture("icons/microphone.png", 30, 30)

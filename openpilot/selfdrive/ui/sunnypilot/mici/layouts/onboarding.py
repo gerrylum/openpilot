@@ -8,6 +8,7 @@ from collections.abc import Callable
 
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigConfirmationCircleButton
 from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.sunnypilot.brand import brand_asset
 from openpilot.system.ui.mici_setup import GreyBigButton
 from openpilot.system.ui.widgets.scroller import NavScroller
 
@@ -27,7 +28,7 @@ class SunnylinkConsentPage(NavScroller):
 
     self._scroller.add_widgets([
       GreyBigButton("sunnylink", "scroll to continue",
-                    gui_app.texture("../../sunnypilot/selfdrive/assets/logo.png", 64, 64)),
+                    gui_app.texture(brand_asset("logo_circle.png"), 64, 64)),
       GreyBigButton("", "sunnylink enables secured remote access to your comma device from anywhere."),
       self._accept_button,
       self._decline_button,

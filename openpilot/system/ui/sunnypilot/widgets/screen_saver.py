@@ -11,8 +11,8 @@ import pyray as rl
 
 from openpilot.common.hardware import HARDWARE
 from openpilot.common.params import Params
-from openpilot.system.ui.lib.application import gui_app, FontWeight
-from openpilot.system.ui.lib.text_measure import measure_text_cached
+from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.sunnypilot.brand import brand_texture
 from openpilot.system.ui.widgets import Widget
 
 
@@ -30,8 +30,8 @@ class ScreenSaverSP(Widget):
     self._hue = 150
     self.color = rl.color_from_hsv(self._hue, 1, 1)
 
-    self.text = "sunnypilot"
-    self.font_size = 50 if self._is_mici else 200
+    # rx-wb branding: the white EVPILOT logo bounces around, tinted a new colour at each wall
+    self._logo = brand_texture("screensaver.png", max_width=220 if self._is_mici else 640)
     self._start_time = None
     self._dismiss = False
     self._screensaver_timeout = 300
@@ -65,10 +65,8 @@ class ScreenSaverSP(Widget):
   def _update_state(self):
     super()._update_state()
 
-    self.font = gui_app.font(FontWeight.AUDIOWIDE)
-    text_size = measure_text_cached(self.font, self.text, self.font_size, 0)
-    self.logo_width = text_size.x
-    self.logo_height = text_size.y
+    self.logo_width = self._logo.width
+    self.logo_height = self._logo.height
 
     if self._start_time and time.monotonic() - self._start_time > self._screensaver_timeout:
       self._dismiss = True
@@ -114,5 +112,5 @@ class ScreenSaverSP(Widget):
   def _render(self, rect: rl.Rectangle):
     self.set_rect(rect)
     rl.clear_background(rl.BLACK)
-    rl.draw_text_ex(self.font, self.text, rl.Vector2(int(self.x), int(self.y)), self.font_size, 0, self.color)
+    rl.draw_texture_ex(self._logo, rl.Vector2(int(self.x), int(self.y)), 0.0, 1.0, self.color)
     return -1

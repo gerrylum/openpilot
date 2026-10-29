@@ -10,9 +10,11 @@ from openpilot.system.ui.lib.application import gui_app, FontWeight, TextAlignme
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.lib.multilang import tr, trn
 from openpilot.system.ui.widgets.label import gui_label
+from openpilot.system.ui.sunnypilot.brand import brand_texture
 
 BRAND_FONT_SIZE = 48
 BRAND_DESC_SPACING = 12
+BRAND_LOGO_HEIGHT = 40  # about the cap height of the 48 px brand text it replaces
 
 
 class HomeLayoutSP(HomeLayout):
@@ -51,7 +53,6 @@ class HomeLayoutSP(HomeLayout):
     version_right = self.header_rect.x + self.header_rect.width
     version_left = version_right - version_text_width
 
-    brand = "sunnypilot"
     description = self.params.get("UpdaterCurrentDescription") or ""
 
     desc_width = 0
@@ -61,8 +62,10 @@ class HomeLayoutSP(HomeLayout):
       desc_rect = rl.Rectangle(version_right - desc_width, self.header_rect.y, desc_width, self.header_rect.height)
       gui_label(desc_rect, description, BRAND_FONT_SIZE, rl.WHITE, alignment=TextAlignment.RIGHT)
 
-    brand_size = measure_text_cached(gui_app.font(FontWeight.AUDIOWIDE), brand, BRAND_FONT_SIZE)
-    spacing = BRAND_DESC_SPACING if description else 0
-    brand_x = version_right - desc_width - spacing - brand_size.x
-    brand_rect = rl.Rectangle(max(version_left, brand_x), self.header_rect.y, brand_size.x, self.header_rect.height)
-    gui_label(brand_rect, brand, BRAND_FONT_SIZE, rl.WHITE, font_weight=FontWeight.AUDIOWIDE)
+    # rx-wb branding: the EVPILOT wordmark in place of the brand text
+    logo = brand_texture("wordmark.png", max_height=BRAND_LOGO_HEIGHT)
+    spacing = BRAND_DESC_SPACING * 2 if description else 0
+    brand_x = version_right - desc_width - spacing - logo.width
+    if brand_x >= version_left:
+      logo_y = self.header_rect.y + (self.header_rect.height - logo.height) / 2
+      rl.draw_texture_ex(logo, rl.Vector2(brand_x, logo_y), 0.0, 1.0, rl.WHITE)

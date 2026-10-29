@@ -4,6 +4,7 @@ import select
 import sys
 
 from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.sunnypilot.brand import brand_asset
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.text import wrap_text
 from openpilot.system.ui.widgets import Widget
@@ -35,7 +36,7 @@ def clamp(value, min_value, max_value):
 class Spinner(Widget):
   def __init__(self):
     super().__init__()
-    self._comma_texture = gui_app.texture("../../sunnypilot/selfdrive/assets/images/spinner_sunnypilot.png", TEXTURE_SIZE, TEXTURE_SIZE)
+    self._comma_texture = gui_app.texture(brand_asset("spinner.png"), TEXTURE_SIZE, TEXTURE_SIZE)
     self._spinner_texture = gui_app.texture("images/spinner_track.png", TEXTURE_SIZE, TEXTURE_SIZE, alpha_premultiply=True)
     self._rotation = 0.0
     self._progress: int | None = None
