@@ -151,7 +151,7 @@ class SelfdriveD:
     self.state_machine = StateMachine()
     self.rk = Ratekeeper(100, print_delay_threshold=None)
 
-    self.ignored_processes = {'mapd', }
+    self.ignored_processes = {'mapd', 'webrtcd', 'stream_encoderd'}  # they only feed a viewer, never take control away
 
     # Determine startup event
     is_remote = build_metadata.openpilot.comma_remote or build_metadata.openpilot.sunnypilot_remote

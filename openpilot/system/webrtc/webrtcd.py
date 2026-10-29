@@ -18,11 +18,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from typing import Any
 
+from openpilot.system.webrtc import opview_slim
 from openpilot.system.webrtc.helpers import StreamRequestBody
 from openpilot.system.webrtc.schema import generate_field
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.cereal import messaging, log
+from opendbc.car.structs import car
 
 SESSION_TIMEOUT_SECONDS = 300
 
@@ -69,12 +71,16 @@ class AsyncTaskRunner:
 
 
 class CerealOutgoingMessageProxy(AsyncTaskRunner):
-  def __init__(self, services: list[str], enabled: bool = True):
+  def __init__(self, services: list[str], enabled: bool = True, opview: bool = False):
     super().__init__()
     self.services = list(services)
     self.sm = messaging.SubMaster(self.services)
     self.channels = []
     self._enabled = enabled
+    self.opview = opview  # slim each service (opview_slim.py) and also send the settings the app can't see
+    self.params = Params()
+    self._last_sent: dict[str, float] = {}
+    self._car: dict[str, Any] | None = None
 
   def add_channel(self, channel):
     self.channels.append(channel)
@@ -94,20 +100,41 @@ class CerealOutgoingMessageProxy(AsyncTaskRunner):
 
     return msg_dict
 
+  def _send(self, service: str, data, mono_time: int, valid: bool = True):
+    encoded_msg = json.dumps({"type": service, "logMonoTime": mono_time, "valid": valid, "data": data}).encode()
+    for channel in self.channels:
+      if channel.is_open():
+        channel.send(encoded_msg)
+
+  def _opview_params(self) -> dict[str, Any]:
+    if self._car is None and (cp_bytes := self.params.get("CarParamsPersistent")):  # carParams is only published every ~50 s
+      cp = messaging.log_from_bytes(cp_bytes, car.CarParams)
+      self._car = {"CarBrand": cp.brand, "CarFlags": cp.flags}
+    return {
+      **(self._car or {"CarBrand": "", "CarFlags": 0}),
+      **{k: self.params.get_bool(k) for k in ("IsMetric", "RoadNameToggle", "TrueVEgoUI", "ShowTurnSignals", "BlindSpot")},
+      "SpeedLimitMode": int(self.params.get("SpeedLimitMode", return_default=True) or 0),
+    }
+
   def update(self):
     # this is blocking in async context...
     self.sm.update(0)
+    now = time.monotonic()
     for service, updated in self.sm.updated.items():
       if not updated:
         continue
-      msg_dict = self.to_json(self.sm[service])
-      mono_time, valid = self.sm.logMonoTime[service], self.sm.valid[service]
-      outgoing_msg = {"type": service, "logMonoTime": mono_time, "valid": valid, "data": msg_dict}
-      encoded_msg = json.dumps(outgoing_msg).encode()
-      for channel in self.channels:
-        if not channel.is_open():
+      if self.opview:
+        if now - self._last_sent.get(service, 0.) < opview_slim.min_gap_s(service):
           continue
-        channel.send(encoded_msg)
+        self._last_sent[service] = now
+        msg_dict = opview_slim.slim(service, self.sm[service])
+      else:
+        msg_dict = self.to_json(self.sm[service])
+      self._send(service, msg_dict, self.sm.logMonoTime[service], self.sm.valid[service])
+
+    if self.opview and now - self._last_sent.get("opviewParams", 0.) >= 1.:
+      self._last_sent["opviewParams"] = now
+      self._send("opviewParams", self._opview_params(), time.monotonic_ns())
 
   async def run(self):
     while True:
@@ -236,6 +263,8 @@ class StreamSession:
     builder = WebRTCAnswerBuilder(body.sdp, bind_address=_default_route_ip())
 
     self.enabled = body.enabled
+    self.opview = self.params.get_bool("OpviewEnabled")
+    self.session_timeout = None if self.opview else SESSION_TIMEOUT_SECONDS  # opview viewers stay the whole drive
     self.video_tracks = []
     for camera in body.cameras:
       track = LiveStreamVideoStreamTrack(camera, self.enabled)
@@ -252,7 +281,7 @@ class StreamSession:
     if len(body.bridge_services_in) > 0:
       self.incoming_bridge = CerealIncomingMessageProxy(self.shared_pub_master)
     if len(body.bridge_services_out) > 0:
-      self.outgoing_bridge = CerealOutgoingMessageProxy(body.bridge_services_out, self.enabled)
+      self.outgoing_bridge = CerealOutgoingMessageProxy(body.bridge_services_out, self.enabled, self.opview)
     self.bitrate_controller = LivestreamBitrateController(self.stream.get_receiver_report_stats, self.params, self.enabled)
 
     self.run_task: asyncio.Task | None = None
@@ -321,9 +350,9 @@ class StreamSession:
 
   async def run_normal_session(self):
     try:
-      await asyncio.wait_for(self.stream.wait_for_disconnection(), timeout=SESSION_TIMEOUT_SECONDS)
+      await asyncio.wait_for(self.stream.wait_for_disconnection(), timeout=self.session_timeout)
     except TimeoutError:
-      self.logger.warning("Stream session (%s) timed out after %d s", self.identifier, SESSION_TIMEOUT_SECONDS)
+      self.logger.warning("Stream session (%s) timed out after %d s", self.identifier, self.session_timeout)
       try:
         self.stream.get_messaging_channel().send(json.dumps({"type": "disconnect", "data": "Session timed out"}))
       except Exception:
@@ -506,9 +535,22 @@ class WebrtcdHandler(BaseHTTPRequestHandler):
     "/notify": ("POST",),
   }
 
+  def _send_cors_headers(self) -> None:
+    # pages from any site may use this server (Gerry, 2026-10-10): it's only reachable on the car's own network.
+    # Trade-off: such a page can start or end a stream and publish bridge_services_in. The opview app sends no Origin.
+    if origin := self.headers.get("Origin"):
+      self.send_header("Access-Control-Allow-Origin", origin)
+      self.send_header("Vary", "Origin")
+      self.send_header("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")
+      self.send_header("Access-Control-Allow-Headers", "Content-Type")
+      if self.headers.get("Access-Control-Request-Private-Network") == "true":  # Chrome, HTTPS page to a LAN device
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+      self.send_header("Access-Control-Max-Age", "600")
+
   def _send(self, status: int, body: bytes, content_type: str) -> None:
     self.send_response(status)
     self.send_header("Content-Type", content_type)
+    self._send_cors_headers()
     self.send_header("Content-Length", str(len(body)))
     self.end_headers()
     if self.command != "HEAD":
@@ -567,7 +609,10 @@ class WebrtcdHandler(BaseHTTPRequestHandler):
     self._dispatch_request()
 
   def do_OPTIONS(self) -> None:
-    self._dispatch_request()
+    if urlparse(self.path).path in self._routes:  # CORS preflight before a JSON POST
+      self._send(204, b"", "text/plain; charset=utf-8")
+    else:
+      self._dispatch_request()
 
   def log_message(self, format: str, *args: object) -> None:  # noqa: A002  # stdlib override
     # silence default access logging; errors are logged explicitly in _dispatch_request
@@ -637,11 +682,19 @@ def webrtcd_thread(host: str, port: int):
 
 def main():
   parser = argparse.ArgumentParser(description="WebRTC daemon")
-  parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to listen on")
+  parser.add_argument("--host", type=str, default=None, help="Host to listen on")
   parser.add_argument("--port", type=int, default=5001, help="Port to listen on")
   args = parser.parse_args()
 
-  webrtcd_thread(args.host, args.port)
+  opview = Params().get_bool("OpviewEnabled")
+  if opview:
+    # libdatachannel's send() holds the GIL and teleoprtc's PliHandler calls into Python from a libdatachannel thread
+    # that holds the DTLS lock: a keyframe request during send() deadlocks webrtcd (seen on weak wifi). The stream
+    # encoder sends a keyframe every 5 frames anyway, so use a pass-through handler.
+    import teleoprtc.stream
+    from libdatachannel import MediaHandler
+    teleoprtc.stream.PliHandler = lambda _request_keyframe: MediaHandler()
+  webrtcd_thread(args.host or ("0.0.0.0" if opview else "127.0.0.1"), args.port)  # opview connects from the local network
 
 
 if __name__=="__main__":
