@@ -191,6 +191,13 @@ class Car:
 
     # Update carState from CAN
     CS, CS_SP = self.CI.update(can_list)
+
+    # Rivian: an ACC press that did nothing becomes an enable attempt, so selfdrived shows the noEntry reason (never engages)
+    if feedback := getattr(self.CI.CC, 'engage_feedback', None):
+      self.CI.CC.engage_feedback = None
+      CS.buttonEnable = True
+      CS.carNotReady |= feedback == 'notReady'
+      CS.blockPcmEnable |= feedback == 'lowSpeed'
     CS_SP = convert_to_capnp(CS_SP)
 
     # Update radar tracks from CAN

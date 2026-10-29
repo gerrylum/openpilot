@@ -644,8 +644,14 @@ class SelfdriveD:
   def step(self):
     CS = self.data_sample()
     self.update_events(CS)
+    # Rivian never sets buttonEnable itself, card sets it only to show why an ACC press did nothing: alert, never engage
+    rivian_alert_only = self.CP.brand == 'rivian' and self.events.has(EventName.buttonEnable)
+    if rivian_alert_only and not self.events.contains(ET.NO_ENTRY):
+      self.events.remove(EventName.buttonEnable)
     if not self.CP.passive and self.initialized:
       self.enabled, self.active = self.state_machine.update(self.events)
+    if rivian_alert_only:
+      self.events.remove(EventName.buttonEnable)  # MADS would take it as an engagement the panda refuses
     if not self.CP.notCar:
       self.mads.update(CS)
     self.update_alerts(CS)

@@ -90,6 +90,10 @@ class CarEvents:
         if CC.enabled and CS.vEgo < self.CP.minEnableSpeed:
           events.add(EventName.speedTooLow)
 
+    elif self.CP.brand == 'rivian':
+      if CS.blockPcmEnable:  # set by card when the stock ACM declined an ACC press below its minimum speed
+        events.add(EventName.belowEngageSpeed)
+
       # TODO: this needs to be implemented generically in carState struct
       # if CC.eps_timer_soft_disable_alert:
       #   events.add(EventName.steerTimeLimit)

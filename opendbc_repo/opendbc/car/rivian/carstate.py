@@ -21,6 +21,7 @@ class CarState(CarStateBase, CarStateExt):
     self.hands_on_level = 0
     self.eac_status = 0
     self.eac_error_code = 0
+    self.acm_fault_supervisor_state = 0  # not 0 while the ACM can't take ACC yet, e.g. the first ~60 s after waking
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     cp = can_parsers[Bus.pt]
@@ -107,6 +108,7 @@ class CarState(CarStateBase, CarStateExt):
     adas_status_msgs = cp.vl_all["VDM_AdasSts"]
     self.vdm_adas_status = [dict(zip(adas_status_msgs, vals, strict=True)) for vals in zip(*adas_status_msgs.values(), strict=True)]
 
+    self.acm_fault_supervisor_state = int(cp_cam.vl["ACM_Status"]["ACM_FaultSupervisorState"])
     self.eac_error_code = int(cp.vl["EPAS_AdasStatus"]["EPAS_EacErrorCode"])
     self.eac_status = int(cp.vl["EPAS_AdasStatus"]["EPAS_EacStatus"])
     self.hands_on_level = int(cp.vl["EPAS_SystemStatus"]["EPAS_HandsOnLevel"])

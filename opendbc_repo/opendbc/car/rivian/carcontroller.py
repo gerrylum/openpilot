@@ -1,6 +1,7 @@
 import numpy as np
 from opendbc.can import CANPacker
-from opendbc.car import Bus
+from opendbc.car import Bus, structs
+from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.rivian.ext_controller import ExternalController, get_safety_CP  # noqa: F401
 from opendbc.car.rivian.riviancan import create_angle_steering, create_lka_steering, create_longitudinal, create_wheel_touch, create_adas_status, \
@@ -9,6 +10,10 @@ from opendbc.car.rivian.values import CarControllerParams, RivianFlags
 
 from opendbc.sunnypilot.car.rivian.mads import MadsCarController
 
+GearShifter = structs.CarState.GearShifter
+
+ACM_ENGAGE_TIMEOUT_FRAMES = 50  # the stock ACM takes an ACC press within ~30 ms, after 0.5 s it declined
+ACM_MIN_ENGAGE_SPEED = 20 * CV.MPH_TO_MS  # the ACM refuses ACC below this without a lead
 
 class CarController(CarControllerBase, MadsCarController):
   def __init__(self, dbc_names, CP, CP_SP):
@@ -21,6 +26,11 @@ class CarController(CarControllerBase, MadsCarController):
     self.long_cmd_counter = 0
     # set by card: False while selfdrived has a NO_ENTRY event (openpilot would refuse to engage)
     self.openpilot_engageable = True
+    # why an ACC press did nothing, for card to show: 'blocked' (hidden from the ACM), 'notReady' or 'lowSpeed' (ACM declined)
+    self.engage_feedback = None
+    self.adas_request_prev = False
+    self.acm_watch_frames = 0
+    self.acm_not_ready = self.acm_low_speed = False
     self.erc = ExternalController()
 
   def update(self, CC, CC_SP, CS, now_nanos):
@@ -69,6 +79,7 @@ class CarController(CarControllerBase, MadsCarController):
       # enters ACC. Once the ACM is in ACC with nothing accepting its long request, it latches a fault that only
       # clears when the car sleeps; a spoofed cancel is not enough to prevent it. Cancel requests still pass through.
       block_engage = not self.openpilot_engageable and not CS.out.cruiseState.enabled
+      self.update_engage_feedback(CS, block_engage)
 
       # keep the stock ACM from winding up its unactuated request
       for msg in CS.vdm_adas_status:
@@ -84,3 +95,23 @@ class CarController(CarControllerBase, MadsCarController):
 
     self.frame += 1
     return new_actuators, can_sends
+
+  def update_engage_feedback(self, CS, block_engage):
+    # VDM_UserAdasRequest 0=idle, 1/2=up, 3/4=down. The stalk is also the gear selector: only a fresh down in Drive is an ACC press
+    if CS.vdm_adas_status:
+      requests = [m["VDM_UserAdasRequest"] for m in CS.vdm_adas_status]
+      acc_press = not self.adas_request_prev and any(r in (3, 4) for r in requests)
+      self.adas_request_prev = any(r not in (0, 1) for r in requests)
+      if acc_press and block_engage and CS.out.gearShifter == GearShifter.drive:
+        self.engage_feedback = 'blocked'
+      elif acc_press and not block_engage and not CS.out.cruiseState.enabled:
+        self.acm_watch_frames, self.acm_not_ready = 1, False
+        self.acm_low_speed = CS.out.vEgo < ACM_MIN_ENGAGE_SPEED
+
+    # a press passed to the ACM that hasn't put it in ACC: the truck only says ACC is unavailable, give the likely reason
+    if self.acm_watch_frames:
+      self.acm_not_ready |= CS.acm_fault_supervisor_state != 0
+      self.acm_watch_frames = 0 if CS.out.cruiseState.enabled else self.acm_watch_frames + 1
+      if self.acm_watch_frames > ACM_ENGAGE_TIMEOUT_FRAMES:
+        self.acm_watch_frames = 0
+        self.engage_feedback = 'notReady' if self.acm_not_ready else 'lowSpeed' if self.acm_low_speed else None
