@@ -118,6 +118,14 @@ sections:
       - type: param
         key: BlinkerPauseLateralControl
         equals: true
+- id: lane_guard
+  title: Lane Guard
+  description: ''
+  items:
+  - key: LaneGuardEnabled
+    widget: toggle
+    title: Lane Guard
+    description: Gently steers the body clear of lane lines and road edges. Pauses while you steer or signal.
 - id: torque
   title: Torque Control
   description: Steering torque tuning and lateral control method
