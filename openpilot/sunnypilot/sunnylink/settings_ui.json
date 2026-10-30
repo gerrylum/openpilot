@@ -693,6 +693,19 @@
               ]
             },
             {
+              "key": "SetSpeedAssist",
+              "widget": "toggle",
+              "title": "Set Speed Assist",
+              "description": "Above 20 mph, lets the car speed up toward the set speed when only the driving model holds it back.",
+              "enablement": [
+                {
+                  "type": "capability",
+                  "field": "has_longitudinal_control",
+                  "equals": true
+                }
+              ]
+            },
+            {
               "key": "IntelligentCruiseButtonManagement",
               "widget": "toggle",
               "title": "Intelligent Cruise Button Management (ICBM) (Alpha)",

@@ -57,6 +57,11 @@ class CruiseLayout(Widget):
       description=tr("Use map data to estimate the appropriate speed to drive through turns ahead."),
       param="SmartCruiseControlMap")
 
+    self.ssa_toggle = toggle_item_sp(
+      title=tr("Set Speed Assist"),
+      description=tr("Above 20 mph, lets the car speed up toward the set speed when only the driving model holds it back."),
+      param="SetSpeedAssist")
+
     self.custom_acc_toggle = toggle_item_sp(
       title=tr("Custom ACC Speed Increments"),
       description="",
@@ -86,6 +91,7 @@ class CruiseLayout(Widget):
       self.icbm_toggle,
       self.scc_v_toggle,
       self.scc_m_toggle,
+      self.ssa_toggle,
       self.custom_acc_toggle,
       self.custom_acc_short_increment,
       self.custom_acc_long_increment,
@@ -140,6 +146,7 @@ class CruiseLayout(Widget):
         self.custom_acc_toggle.action_item.set_enabled(((has_long and not ui_state.CP.pcmCruise) or has_icbm) and ui_state.is_offroad())
         self.scc_v_toggle.action_item.set_enabled(True)
         self.scc_m_toggle.action_item.set_enabled(True)
+        self.ssa_toggle.action_item.set_enabled(has_long)
       else:
         ui_state.params.remove("CustomAccIncrementsEnabled")
         ui_state.params.remove("SmartCruiseControlVision")
@@ -147,6 +154,7 @@ class CruiseLayout(Widget):
         self.custom_acc_toggle.action_item.set_enabled(False)
         self.scc_v_toggle.action_item.set_enabled(False)
         self.scc_m_toggle.action_item.set_enabled(False)
+        self.ssa_toggle.action_item.set_enabled(False)
 
     else:
       has_icbm = has_long = False
