@@ -31,12 +31,6 @@ sections:
   title: Rivian Settings
   description: ''
   items:
-  - key: RivianR1SWheelbase
-    widget: toggle
-    title: I Drive an R1S (not R1T)
-    description: The R1T and R1S can't be told apart automatically yet, so steering assumes the R1T's 3.45 m wheelbase. Turn this on for an R1S (3.08 m). Off-road only; takes effect on your next drive.
-    enablement:
-    - $ref: '#/macros/offroad'
   - key: RivianOfftrackCompensationEnabled
     widget: toggle
     title: Rear-Axle Off-Tracking Compensation
