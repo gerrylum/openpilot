@@ -81,6 +81,11 @@ class SteeringLayout(Widget):
       description=lambda: tr("Delay before lateral control resumes after the turn signal ends."),
       label_callback=lambda delay: f'{delay} {"s"}'
     )
+    self._lane_guard_toggle = toggle_item_sp(
+      param="LaneGuardEnabled",
+      title=lambda: tr("Lane Guard"),
+      description=lambda: tr("Gently steers the body clear of lane lines and road edges. Pauses while you steer or signal."),
+    )
     self._torque_control_toggle = toggle_item_sp(
       param="EnforceTorqueControl",
       title=lambda: tr("Enforce Torque Lateral Control"),
@@ -106,6 +111,8 @@ class SteeringLayout(Widget):
       self._blinker_control_toggle,
       self._blinker_control_options,
       self._blinker_reengage_delay,
+      LineSeparatorSP(40),
+      self._lane_guard_toggle,
       LineSeparatorSP(40),
       self._torque_control_toggle,
       self._torque_customization_button,
