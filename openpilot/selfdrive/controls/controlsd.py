@@ -40,8 +40,8 @@ class Controls(ControlsExt):
     cloudlog.info("controlsd is waiting for CarParams")
     self.CP = messaging.log_from_bytes(self.params.get("CarParams", block=True), car.CarParams)
     cloudlog.info("controlsd got CarParams")
-    if self.CP.brand == 'rivian' and self.params.get_bool("RivianR1SWheelbase"):
-      # the R1T and R1S share one platform, the R1S is shorter
+    if self.CP.brand == 'rivian' and self.CP.carVin[3:4] == 'S':
+      # the R1T and R1S share one platform, the R1S (VIN model line S) is shorter
       cp = self.CP.as_builder()
       cp.centerToFront *= 3.08 / cp.wheelbase
       cp.wheelbase = 3.08
