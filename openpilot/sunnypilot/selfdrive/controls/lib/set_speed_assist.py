@@ -4,7 +4,7 @@ from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 
-MAX_BOOST = 0.7  # m/s^2 above the model
+MAX_BOOST = (0.7, 0.5, 0.3)  # m/s^2 above the model, by driving personality: aggressive, standard, relaxed
 MIN_SPEED, MIN_DEFICIT = 20 * CV.MPH_TO_MS, 2 * CV.MPH_TO_MS
 MAX_LAT_ACCEL = 1.0  # m/s^2, off in turns
 MODEL_SLOWING = -0.1  # m/s^2, any model slow-down drops the boost at once
@@ -27,6 +27,6 @@ class SetSpeedAssist:
     else:
       active = (self.enabled and sm['selfdriveState'].enabled and v > MIN_SPEED and v_cruise - v > MIN_DEFICIT
                 and abs(action.desiredCurvature) * v ** 2 < MAX_LAT_ACCEL)
-      target = float(np.clip(a_cruise - a_e2e, 0., MAX_BOOST)) if active else 0.
+      target = float(np.clip(a_cruise - a_e2e, 0., MAX_BOOST[sm['selfdriveState'].personality.raw])) if active else 0.
       self.boost = float(np.clip(target, self.boost - RAMP_DOWN * DT_MDL, self.boost + RAMP_UP * DT_MDL))
     return a_e2e + self.boost
